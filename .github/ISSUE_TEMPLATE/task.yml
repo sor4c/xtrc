@@ -1,0 +1,39 @@
+name: Technical Task / Chore
+description: Propose refactoring, CI/CD, documentation, or tooling work
+title: "[Task]: "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Technical Task / Chore
+        Use this template for maintenance, refactoring, dependencies, documentation, or CI/CD tooling.
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 1. Motivation & Purpose
+      description: Why is this technical task needed? What technical debt or operational need does it address?
+      placeholder: Refactor CLI parser module to improve performance...
+    validations:
+      required: true
+  - type: textarea
+    id: deliverables
+    attributes:
+      label: 2. High-Level Requirements & Deliverables
+      description: What are the concrete requirements and outcomes for this task?
+      placeholder: |
+        - Requirement 1: ...
+        - Requirement 2: ...
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: 3. Verification & Acceptance Checklist
+      description: How will this task be proven complete without regression?
+      placeholder: |
+        - [ ] cargo test passes
+        - [ ] cargo clippy -- -D warnings passes
+        - [ ] Benchmarks demonstrate < 5ms runtime
+    validations:
+      required: true
