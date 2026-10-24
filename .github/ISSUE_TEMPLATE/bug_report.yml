@@ -1,0 +1,60 @@
+name: Bug Report / Defect
+description: Report a defect where observed behavior deviates from specified intent
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Thank you for reporting a defect in `xtrc`!
+        In `xtrc`, bugs are treated as deviations from specified intent. Please provide reproduction details and indicate the affected requirement or behavior.
+  - type: textarea
+    id: expected_intent
+    attributes:
+      label: 1. Expected Intent & Behavior
+      description: What was supposed to happen according to requirements or specifications?
+      placeholder: According to the specification, running 'xtrc check' should...
+    validations:
+      required: true
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: 2. Actual Behavior & Observed Outcome
+      description: What actually happened? Provide terminal output, logs, or error messages.
+      placeholder: Observed exit code 1 with panic...
+    validations:
+      required: true
+  - type: input
+    id: affected_requirement
+    attributes:
+      label: 3. Affected Requirement / Traceability ID
+      description: Specify the requirement, command, or spec identifier affected.
+      placeholder: e.g., REQ-TRACE-01 or 'xtrc verify'
+  - type: textarea
+    id: repro_steps
+    attributes:
+      label: 4. Steps to Reproduce
+      description: Minimal, complete, and verifiable steps to reproduce the issue.
+      placeholder: |
+        1. Run '...'
+        2. Inspect '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 5. Environment Details
+      description: OS version, Rust toolchain version (`rustc --version`), xtrc commit/version.
+      placeholder: |
+        OS: macOS 15.3 / Ubuntu 22.04
+        Rust: 1.84.0
+        Devcontainer: Yes/No
+    validations:
+      required: true
+  - type: textarea
+    id: potential_fix
+    attributes:
+      label: 6. Root Cause Insights or Potential Fix (Optional)
+      description: Any initial debugging findings or insights into intent resolution.
+      placeholder: Investigation notes, offending line references, or suggested fixes...

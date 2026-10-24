@@ -1,2 +1,173 @@
 # xtrc
-xtrc is a fast, plain-text traceability CLI written in Rust. It tracks relationships across your entire workflow, linking vision, strategy, epics, and stories directly to technical specs and code. It lives purely in version control, ditching heavy databases so you can verify project alignment instantly right from your terminal.
+
+> xtrc is a fast, plain-text traceability CLI written in Rust. It tracks relationships across your entire workflow, linking vision, strategy, epics, and stories directly to technical specs and code. It lives purely in version control, ditching heavy databases so you can verify project alignment instantly right from your terminal.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org)
+
+---
+
+## The Vision
+
+In modern software engineering, understanding *why* a piece of code exists and *what* user value it delivers is surprisingly difficult. Traditional Application Lifecycle Management (ALM) and requirements tracking tools—such as Jira, IBM DOORS, Enterprise Architect, and Jama—isolate requirements within heavyweight, proprietary database silos detached from the source code.
+
+This centralized database architecture causes three critical problems:
+1. **Synchronization Drift**: As code rapidly evolves in Git branches, database tickets fall out of sync. Requirements become stale artifacts rather than living contracts.
+2. **Audit Friction & Compliance Drag**: Regulated industries and security-conscious teams spend weeks manually cross-referencing Git commit hashes with web tickets and spreadsheet rows to prove compliance.
+3. **Developer Context Switching**: Forcing engineers out of their terminal and code editor into slow web dashboards creates friction, leading to abandoned or superficial tracking.
+
+**`xtrc` eliminates the database silo.** By moving traceability directly into version control as human-readable plain text, traceability becomes as native to software engineering as Git branching, code review, and automated testing.
+
+| Traditional ALM (Jira / DOORS) | The `xtrc` Plain-Text / VCS-Native Approach |
+|---|---|
+| **Database Silos**: Stored on remote servers behind proprietary APIs. | **Repository-Resident**: Plain text files committed alongside code. |
+| **Out-of-Sync Branches**: Tickets represent only one "current" state. | **Branch-Aware**: Requirements branch, merge, and rebase with code. |
+| **Heavyweight UI**: Sluggish web portals, complex permissions. | **Sub-Second CLI**: Instant terminal feedback in milliseconds. |
+| **Disjointed Audits**: Manual cross-referencing between Git and ALMs. | **Automated Audits**: Deterministic CI gates and verifiable graphs. |
+
+---
+
+## Core Concepts
+
+### 1. Plain-Text Traceability
+All requirements, stories, architectural specifications, and verification records are stored as clean, human-readable plain text (Markdown, YAML, or TOML) inside your repository. Because they are plain text, they can be searched with standard Unix utilities (`grep`, `rg`), edited in any editor, and reviewed via pull requests.
+
+### 2. VCS-Native Architecture
+`xtrc` requires no external databases, no hosted cloud services, and zero network calls. Everything is tracked within Git. When you branch a feature, you branch its requirements. When a pull request merges, its traceability links and code are updated atomically.
+
+### 3. Multidimensional Relationship Graph
+`xtrc` parses your repository artifacts to build a comprehensive, directed acyclic graph (DAG) spanning business intent down to the binary level:
+
+```
+[ Vision ]
+    │
+    ▼
+[ Strategy ]
+    │
+    ▼
+[ Epics ]
+    │
+    ▼
+[ User Stories ]
+    │
+    ▼
+[ Technical Specs ]
+    │
+    ▼
+[ Source Code ]
+    │
+    ▼
+[ Automated Tests ]
+```
+
+Every node in the graph represents a traceable artifact with an identifier, and every edge represents a documented dependency or fulfillment relationship.
+
+### 4. Bidirectional Traceability
+Traceability must work in both directions to provide true project integrity:
+- **Forward Traceability (Completeness)**: Ensures every high-level business requirement, epic, and user story is fully decomposed into technical specifications, implemented in source code, and verified by passing automated tests. It prevents forgotten requirements and unfulfilled promises.
+- **Backward Traceability (Justification)**: Ensures every line of source code, technical specification, and architectural decision can be traced back to a legitimate user story and strategic objective. It eliminates gold-plating, rogue features, and orphan dead code.
+
+### 5. Instant Terminal Verification
+`xtrc` delivers blazing-fast, sub-second audits directly in your terminal. You can immediately identify broken references, unlinked code, or missing test coverage before pushing commits.
+
+---
+
+## Planned Workflow
+
+`xtrc` seamlessly embeds into the standard developer lifecycle:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ 1. Intent   │ ──> │  2. Specs   │ ──> │   3. Code   │
+└─────────────┘     └─────────────┘     └─────────────┘
+                                               │
+┌─────────────┐     ┌─────────────┐            ▼
+│  6. Query   │ <── │   5. CI/CD  │ <── ┌─────────────┐
+│  & Report   │     │    Gate     │     │  4. Verify  │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+### Step 1: Capture Intent
+Define high-level product intent—vision, strategic goals, epics, and user stories—in version-controlled Markdown files or structured issue templates (`.github/ISSUE_TEMPLATE/`). Each requirement receives a unique identifier (e.g., `REQ-AUTH-01`).
+
+### Step 2: Derive Technical Specifications
+Derive technical specifications, architecture decisions (ADRs), and interface contracts that address the high-level requirements. Technical specs explicitly reference their parent requirement IDs.
+
+### Step 3: Implement & Link in Code
+Implement features in idiomatic code, embedding lightweight traceability annotations directly in docstrings and comments:
+```rust
+// @trace REQ-AUTH-01
+// Implements token validation logic according to spec.
+pub fn validate_session_token(token: &str) -> Result<Session, AuthError> {
+    // ...
+}
+```
+
+### Step 4: Verify Alignment Locally
+Before committing, run `xtrc check` or `xtrc verify` in your terminal. `xtrc` parses the repository, builds the relationship graph, and surfaces any orphaned code, unmapped requirements, or broken reference links in milliseconds.
+
+```console
+$ xtrc check
+Scanning repository artifacts...
+Loaded: 12 requirements, 8 specs, 42 code links, 18 test links.
+[OK] Bidirectional traceability verified (100% coverage, 0 broken links).
+```
+
+### Step 5: Enforce in CI/CD Gates
+Integrate `xtrc` into your continuous integration pipeline (such as GitHub Actions). Pull requests with broken traceability links, missing test assertions, or unfulfilled acceptance criteria are blocked automatically.
+
+```yaml
+# .github/workflows/traceability.yml
+- name: Verify Traceability
+  run: xtrc check --strict
+```
+
+### Step 6: Query, Visualize & Report
+Inspect the traceability graph on demand:
+- `xtrc matrix`: Generate a full traceability matrix (requirements vs code vs tests).
+- `xtrc tree REQ-AUTH-01`: Print the dependency tree for a specific requirement.
+- `xtrc export --format markdown`: Export compliance-ready documentation for external audits.
+
+---
+
+## Development & Getting Started
+
+### Turnkey Dev Container (Recommended)
+This repository includes a complete [VS Code Remote - Containers / GitHub Codespaces](https://containers.dev) environment configured in `.devcontainer/devcontainer.json`.
+1. Open the repository in VS Code.
+2. When prompted, click **Reopen in Container** (or run `Remote-Containers: Reopen in Container` from the Command Palette).
+3. The Dev Container automatically provisions the Rust toolchain (`cargo`, `rustfmt`, `clippy`, `rust-analyzer`), Git, GitHub CLI (`gh`), and preconfigured editor extensions.
+
+### Local Development Prerequisites
+If developing locally without Docker/Dev Containers, ensure you have:
+- **Rust Toolchain**: Stable Rust installed via [rustup](https://rustup.rs/).
+- **Cargo**: Rust's package manager and build system.
+
+### Build and Test Commands
+```bash
+# Build the project
+cargo build
+
+# Run unit and integration tests
+cargo test
+
+# Check code formatting
+cargo fmt --check
+
+# Run linter checks
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+### Contributing & Governance
+`xtrc` follows a strict development governance model:
+- **Issue-Driven Development**: All work begins with a documented issue.
+- **Requirements Before Design**: Clarify behavioral requirements before designing solutions.
+- **Intent Over Implementation**: Focus on verifiable outcomes rather than prescriptive mechanics.
+
+For full guidelines on contributing, code standards, and PR workflows, please review [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## License
+
+This project is licensed under the terms of the [MIT License](LICENSE).

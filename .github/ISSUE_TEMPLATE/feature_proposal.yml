@@ -1,0 +1,65 @@
+name: Feature Proposal
+description: Propose a new feature driven by intent and high-level requirements
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Thanks for proposing a feature for `xtrc`!
+        Before proceeding, please review our [Contributing Guidelines](https://github.com/sor4c/xtrc/blob/main/CONTRIBUTING.md) and uphold the 3 Core Development Rules:
+        1. **Issue-Driven Development**: Work starts here with clear context and problem definition.
+        2. **Requirements Before Design**: Define high-level requirements and acceptance criteria before implementation.
+        3. **Intent Over Implementation**: Focus on desired outcomes, user value, and behavioral contracts rather than prescriptive "how".
+  - type: textarea
+    id: intent
+    attributes:
+      label: 1. Intent & Problem Statement
+      description: What problem does this feature solve? What is the user intent and desired outcome?
+      placeholder: Describe the underlying motivation, user persona, and business or technical value...
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: 2. High-Level Requirements
+      description: List the essential functional and non-functional requirements (what the system MUST do, not how).
+      placeholder: |
+        - REQ-1: The CLI MUST...
+        - REQ-2: Output MUST be plain-text parseable...
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 3. Scope & Non-Goals
+      description: Explicitly clarify what is in-scope and what is deliberately out-of-scope for this proposal.
+      placeholder: |
+        In-Scope:
+        - ...
+
+        Non-Goals:
+        - ...
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: 4. Acceptance Criteria & Verification
+      description: Bullet list of verifiable conditions under which this feature is considered complete.
+      placeholder: |
+        - [ ] CLI command returns 0 on valid inputs
+        - [ ] Unit tests cover boundary conditions
+        - [ ] Documentation updated in README and docs
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_design
+    attributes:
+      label: "5. Proposed Design & Technical Considerations (Optional)"
+      description: "Initial thoughts on implementation. Remember: requirements come first; design is derived."
+      placeholder: Architecture ideas, CLI flags, crate dependencies...
+  - type: input
+    id: traceability_link
+    attributes:
+      label: 6. Traceability / Strategic Alignment
+      description: Reference related vision docs, epics, or parent issues.
+      placeholder: Epic #12 or Vision doc section...

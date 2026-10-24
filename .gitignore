@@ -1,0 +1,95 @@
+# ==============================================================================
+# Rust & Cargo Build Artifacts
+# ==============================================================================
+/target/
+target/
+**/*.rs.bk
+*.pdb
+*.profraw
+*.profdata
+
+# NOTE: Cargo.lock is intentionally tracked in version control for binary / CLI
+# applications to ensure reproducible builds across development environments and CI.
+
+# ==============================================================================
+# Operating System Artifacts
+# ==============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.fuse_hidden*
+.nfs*
+
+# ==============================================================================
+# IDEs and Editors
+# ==============================================================================
+
+# Visual Studio Code
+# Preserve shared workspace configuration while ignoring user-specific state
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains (CLion, RustRover, IntelliJ IDEA)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Vim
+*.swp
+*.swo
+*.swn
+*.swm
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# ==============================================================================
+# Temporary Files, Logs, and Scratch Data
+# ==============================================================================
+*.log
+*.tmp
+*.bak
+tmp/
+temp/
+scratch/
+coverage/
+.coverage/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ==============================================================================
+# Agent Scratchpad & Multi-Agent Collaboration Metadata
+# ==============================================================================
+# Agent scratchpad and multi-agent coordination metadata
+.agents/
+

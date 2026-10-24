@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: xtrc Contributing Guidelines
+    url: https://github.com/sor4c/xtrc/blob/main/CONTRIBUTING.md
+    about: Please review the 3 core development rules before opening an issue.

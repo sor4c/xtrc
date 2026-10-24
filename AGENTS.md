@@ -1,0 +1,93 @@
+# Autonomous Agent Instructions & Repository Governance for xtrc
+
+This file establishes the mandatory operational rules, quality gates, and engineering standards for all autonomous software engineering agents (including Google Antigravity, Gemini, Teamwork, Claude Code, Devin, and Codex) operating within the `xtrc` repository.
+
+---
+
+## 1. Persona & Operational Scope
+
+You are an autonomous software engineering agent contributing to **`xtrc`**.
+
+`xtrc` is a fast, plain-text traceability CLI written in Rust. It tracks relationships across the complete software development lifecycle, linking vision, strategy, epics, and user stories directly to technical specs, source code, and automated tests.
+
+`xtrc` operates purely inside version control (Git), eliminating heavyweight databases and web silos so developers can verify project alignment instantly right from their terminal.
+
+---
+
+## 2. Non-Negotiable Governance Rules
+
+All autonomous agents MUST adhere strictly to the **Three Core Development Rules**:
+
+### Rule 1: Issue-Driven Development
+- Every functional code change, bug fix, or refactor must be grounded in an existing GitHub Issue or requirement ID.
+- Before generating code or modifying existing files, verify that an issue exists describing the motivation, requirements, and scope.
+- Reference the issue number or requirement ID in commit messages and pull request descriptions (e.g., `Fixes #10` or `Relates to #15`).
+- Unsolicited, ungrounded code modifications are strictly prohibited.
+
+### Rule 2: Requirements Before Design
+- Requirements define the problem space (*what* the system must do and *why*); design defines the solution space (*how*).
+- Thoroughly inspect, clarify, and document high-level functional requirements and verifiable acceptance criteria before proposing architecture, modules, or implementations.
+- Design decisions must be directly derived from validated requirements.
+
+### Rule 3: Intent Over Implementation
+- Focus on the intended outcome, user value, and behavioral contracts rather than prescriptive mechanisms.
+- Choose clean, idiomatic, and minimal Rust solutions that directly satisfy the stated intent without introducing unnecessary abstraction layers.
+- Write tests that verify observable behavioral outcomes, not private internal implementation details.
+
+---
+
+## 3. Mandatory Quality Gates & Verification
+
+Before reporting completion or submitting changes, agents MUST execute and verify that all of the following quality gates pass with exit code `0`:
+
+1. **Formatting**:
+   ```bash
+   cargo fmt --check
+   ```
+2. **Linting & Diagnostics**:
+   ```bash
+   cargo clippy --all-targets --all-features -- -D warnings
+   ```
+3. **Automated Test Suite**:
+   ```bash
+   cargo test --all-targets --all-features
+   ```
+
+### Strict Integrity Mandate (Zero Tolerance for Bypassing Checks)
+Agents are strictly prohibited from taking shortcuts:
+- **No hardcoding**: Do not hardcode test results, expected outputs, or verification strings to make tests pass.
+- **No dummy or facade implementations**: All implementations must maintain real state and execute genuine logic.
+- **No silencing linter warnings**: Do not add `#![allow(...)]` or `#[allow(...)]` attributes to bypass compiler or Clippy checks without explicit user consent.
+- **No weakening tests**: Never comment out failing tests, delete assertions, or modify test expectations to match buggy behavior.
+- **No fabricated verification**: Never claim checks passed without executing the commands and inspecting their verbatim output.
+
+---
+
+## 4. Workspace Hygiene
+
+Agents must keep the repository clean and professional:
+- **No clutter in tracked paths**: Do not leave scratch files, debug logs, temporary scripts, or ad-hoc binaries in tracked repository directories.
+- **Scratch directory**: If scratch files or intermediate logs are necessary during execution, write them to temporary directories or paths ignored by `.gitignore`.
+- **Metadata directory isolation**: The `.agents/teamwork/` directory is reserved exclusively for agent collaboration metadata (plans, progress, handoffs). **NEVER** place source code, tests, or application assets inside `.agents/teamwork/`.
+- **Pre-handoff cleanup**: Verify that `git status` reports only intended modifications before finalizing any task.
+
+---
+
+## 5. Rust Standards & Coding Guidelines
+
+- **Rust Toolchain**: Target modern Rust (Edition 2021 / 2024).
+- **Error Handling**:
+  - Strictly **no naked `.unwrap()` or `.expect()`** in production codepaths.
+  - In internal modules and libraries, define domain-specific error enums using [`thiserror`](https://docs.rs/thiserror).
+  - In CLI entry points and command handlers, use [`anyhow`](https://docs.rs/anyhow) with `.context("...")` to provide user-actionable error messages.
+- **CLI Behavior**:
+  - Print structured, machine-parseable data to `stdout`.
+  - Print logs, progress spinners, diagnostics, and errors to `stderr`.
+  - Use standard Unix exit codes (`0` for success, non-zero for failure).
+- **Documentation**:
+  - All public modules, structs, enums, traits, and functions must be documented with `///` rustdoc docstrings.
+- **Test Co-Location**:
+  - Co-locate unit tests within `mod tests` in the same file as the implementation.
+  - Cover edge cases, error conditions, and boundary values.
+- **Traceability Integration**:
+  - Annotate source code and tests with traceability markers (e.g., `// @trace REQ-...`) linking directly back to specifications and issues.
