@@ -1,0 +1,21 @@
+version = "1"
+
+[project]
+name = "xtrc"
+root = "."
+
+[specs]
+include = ["docs/**/*.md"]
+# README.md contains illustrative @trace examples for end users, not real links.
+exclude = [".agents/**", "target/**", "README.md"]
+
+[code]
+include = ["src/**/*.rs", "lib/**/*.*"]
+extensions = [".rs", ".py", ".go", ".ts", ".js", ".c", ".cpp"]
+
+[tests]
+include = ["tests/**/*.*"]
+
+[validation]
+strict = false
+require_test_coverage = true
