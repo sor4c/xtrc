@@ -1,4 +1,4 @@
-# @trace SPEC-CD-DELIVERY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN
+# @trace SPEC-CD-DELIVERY, SPEC-VER-POLICY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, REQ-VER-POLICY
 name: Head-of-Main Delivery
 
 on:
@@ -46,8 +46,10 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout repository with full history for version policy
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -58,22 +60,26 @@ jobs:
       - name: Install Debian packaging tool (cargo-deb)
         run: cargo install cargo-deb --locked
 
-      - name: Build release binary
-        run: cargo build --release --locked
+      - name: Compute unique delivery version and build release binary
+        run: |
+          VERSION="$(bash scripts/compute-version.sh)"
+          echo "XTRC_DELIVERY_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          XTRC_DELIVERY_VERSION="${VERSION}" cargo build --release --locked
+          ./target/release/xtrc --version | grep -F "xtrc ${VERSION}"
 
       - name: Generate SPDX 2.3 JSON SBOM and package deliverables
         run: |
-          VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          VERSION="${XTRC_DELIVERY_VERSION}"
           TARGET="x86_64-unknown-linux-gnu"
           STAGE_DIR="dist/xtrc-v${VERSION}-${TARGET}"
           mkdir -p "${STAGE_DIR}"
 
-          # 1. Generate SPDX 2.3 JSON SBOM (Requirement 3)
-          bash scripts/generate-sbom.sh dist/xtrc.spdx.json
-          jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0) and (.relationships | length > 0)' dist/xtrc.spdx.json >/dev/null
+          # 1. Generate SPDX 2.3 JSON SBOM stamped with unique delivery version (Requirements 3 & Version Policy)
+          bash scripts/generate-sbom.sh dist/xtrc.spdx.json "${VERSION}"
+          jq -e --arg ver "${VERSION}" '.spdxVersion == "SPDX-2.3" and (.packages | any(.name == "xtrc" and .versionInfo == $ver)) and (.relationships | length > 0)' dist/xtrc.spdx.json >/dev/null
 
-          # 2. Build Debian package (.deb) containing binary, docs, and SPDX SBOM (Requirements 1 & 3)
-          cargo deb --no-build --output "dist/xtrc_${VERSION}_amd64.deb"
+          # 2. Build Debian package (.deb) stamped with unique delivery version (Requirements 1 & 3)
+          cargo deb --no-build --deb-version "${VERSION}" --output "dist/xtrc_${VERSION}_amd64.deb"
 
           # 3. Build portable binary archive (.tar.gz) including SPDX SBOM (Requirements 1 & 3)
           cp target/release/xtrc "${STAGE_DIR}/xtrc"
@@ -83,8 +89,8 @@ jobs:
           tar -C dist -czf "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "xtrc-v${VERSION}-${TARGET}"
           rm -rf "${STAGE_DIR}"
 
-          # 4. Generate Homebrew Formula package (xtrc.rb) with tarball SHA-256 (Requirement 1)
-          bash scripts/generate-homebrew-formula.sh "${VERSION}" "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "dist/xtrc.rb" "${GITHUB_REPOSITORY:-sor4c/xtrc}" "main-head"
+          # 4. Generate Homebrew Formula package (xtrc.rb) pinned to immutable release tag v${VERSION} (Requirement 1)
+          bash scripts/generate-homebrew-formula.sh "${VERSION}" "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "dist/xtrc.rb" "${GITHUB_REPOSITORY:-sor4c/xtrc}" "v${VERSION}"
 
           # 5. Generate SHA-256 checksums for all delivery artifacts
           (cd dist && sha256sum xtrc.spdx.json xtrc.rb *.deb *.tar.gz > SHA256SUMS)
@@ -92,7 +98,7 @@ jobs:
       - name: Upload head-of-main delivery artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xtrc-main-delivery
+          name: xtrc-${{ env.XTRC_DELIVERY_VERSION }}-delivery
           path: |
             dist/xtrc.spdx.json
             dist/xtrc.rb
@@ -101,22 +107,34 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
 
-      - name: Publish rolling head-of-main GitHub Release
+      - name: Publish immutable versioned GitHub Release and update main-head pointer
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="main-head"
-          TITLE="xtrc Head-of-Main Delivery (${GITHUB_SHA::7})"
-          NOTES="Automated head-of-main delivery for commit ${GITHUB_SHA}. Includes Homebrew formula (xtrc.rb), Debian package (.deb), prebuilt Linux binary archive (.tar.gz), SHA256SUMS, and SPDX 2.3 JSON SBOM (xtrc.spdx.json)."
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS --clobber
-            gh release edit "${TAG}" --title "${TITLE}" --notes "${NOTES}" --target "${GITHUB_SHA}"
-          else
-            gh release create "${TAG}" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
-              --title "${TITLE}" \
-              --notes "${NOTES}" \
-              --target "${GITHUB_SHA}" \
-              --prerelease
+          VERSION="${XTRC_DELIVERY_VERSION}"
+          VERSION_TAG="v${VERSION}"
+          TITLE="xtrc ${VERSION}"
+          NOTES="Automated head-of-main delivery for version \`${VERSION}\` (commit \`${GITHUB_SHA}\`). Includes Homebrew formula (\`xtrc.rb\`), Debian package (\`xtrc_${VERSION}_amd64.deb\`), prebuilt Linux binary archive (\`xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\`), \`SHA256SUMS\`, and SPDX 2.3 JSON SBOM (\`xtrc.spdx.json\`)."
+
+          # 1. Create immutable versioned release v<VERSION> (never overwrite an existing version tag)
+          if gh release view "${VERSION_TAG}" >/dev/null 2>&1; then
+            echo "Error: Release '${VERSION_TAG}' already exists. Refusing to overwrite an immutable versioned delivery." >&2
+            exit 1
           fi
+          gh release create "${VERSION_TAG}" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+            --title "${TITLE}" \
+            --notes "${NOTES}" \
+            --target "${GITHUB_SHA}" \
+            --prerelease
+
+          # 2. Refresh rolling 'main-head' convenience release so it contains only the current version's artifacts
+          if gh release view "main-head" >/dev/null 2>&1; then
+            gh release delete "main-head" --yes --cleanup-tag
+          fi
+          gh release create "main-head" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+            --title "xtrc Head-of-Main (${VERSION})" \
+            --notes "${NOTES}" \
+            --target "${GITHUB_SHA}" \
+            --prerelease
 

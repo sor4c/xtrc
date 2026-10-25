@@ -3,6 +3,7 @@
 //! // @trace SPEC-DISC-INIT, SPEC-CLI-VERIFY, SPEC-CLI-MATRIX, SPEC-CLI-TREE, SPEC-CLI-EXPORT
 //! // @trace SPEC-CLI-OUTPUT, SPEC-ERR-HIERARCHY, REQ-CLI-INIT, REQ-STRICT-GATE, REQ-CMD-MATRIX
 //! // @trace REQ-CMD-TREE, REQ-CMD-EXPORT, REQ-EXIT-CODES, REQ-UNIX-STREAMS
+//! // @trace SPEC-VER-POLICY, REQ-VER-POLICY
 
 pub mod export;
 pub mod init;
@@ -24,7 +25,7 @@ use crate::error::CliError;
 #[command(
     name = "xtrc",
     author,
-    version,
+    version = env!("XTRC_BUILD_VERSION"),
     about = "Fast, plain-text traceability CLI and 7-layer DAG engine",
     long_about = "Fast, plain-text traceability CLI written in Rust linking vision, strategy, epics, and user stories directly to technical specs, code, and automated tests."
 )]

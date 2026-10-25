@@ -100,8 +100,13 @@ cargo test --all-targets --all-features
 - Fill out the PR description:
   - Reference the originating issue (e.g., `Closes #42`).
   - Summarize the intent of the change and how requirements are fulfilled.
-  - List the verification steps taken.
+  - List the verification steps taken and check off (`- [x]`) all fulfilled acceptance criteria.
 - Ensure all CI workflow checks pass. Address reviewer feedback constructively.
+
+### 7. Version & Delivery Policy
+- **Base Version (`MAJOR.MINOR.PATCH`)**: Managed in `Cargo.toml` per Semantic Versioning 2.0.0.
+- **Unique Delivery Version (`<MAJOR>.<MINOR>.<PATCH>-r<COMMIT_COUNT>.g<SHORT_SHA>`)**: Computed automatically by `scripts/compute-version.sh` and `build.rs` so that every commit and head-of-`main` delivery has a unique, monotonically increasing version across `xtrc --version`, `xtrc.spdx.json`, `.deb`, `.tar.gz`, `xtrc.rb`, and its immutable `v<VERSION>` GitHub Release.
+- Never overwrite an existing `v<VERSION>` release tag with different content.
 
 ---
 

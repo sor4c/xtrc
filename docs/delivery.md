@@ -58,8 +58,16 @@ schema_version: "1.0.0"
 - **Parent**: US-CICD-01
 - **Type**: Functional Requirement
 - **Intent & Value**: Deliver up-to-date, verified packages and SBOM artifacts automatically whenever changes land on the `main` branch.
-- **Observable Contract & Behavior**: GitHub Actions workflow `.github/workflows/delivery.yml` triggers on pushes to `main`, runs all verification criteria first, and upon success builds and publishes the `.tar.gz` archive, `.deb` package, and `xtrc.spdx.json` SBOM to workflow artifacts and the rolling `main-head` GitHub Release.
-- **Acceptance Criteria**: Delivery job depends strictly on passing verification; publishes `.deb`, `.tar.gz`, `SHA256SUMS`, and `xtrc.spdx.json` upon merge or push to `main`.
+- **Observable Contract & Behavior**: GitHub Actions workflow `.github/workflows/delivery.yml` triggers on pushes to `main`, runs all verification criteria first, and upon success builds and publishes the `.tar.gz` archive, `.deb` package, `xtrc.rb` formula, and `xtrc.spdx.json` SBOM to workflow artifacts, an immutable `v<VERSION>` GitHub Release, and the rolling `main-head` pointer.
+- **Acceptance Criteria**: Delivery job depends strictly on passing verification; publishes `.deb`, `.tar.gz`, `xtrc.rb`, `SHA256SUMS`, and `xtrc.spdx.json` upon merge or push to `main`.
+
+### REQ-VER-POLICY: Unique Monotonic Delivery Version Policy
+- **ID**: REQ-VER-POLICY
+- **Parent**: US-CICD-01
+- **Type**: Functional Requirement
+- **Intent & Value**: Prevent multiple head-of-`main` deliveries from sharing the same version string with different binary or package content.
+- **Observable Contract & Behavior**: Every build and head-of-`main` delivery derives a unique, monotonic version `<MAJOR>.<MINOR>.<PATCH>-r<COMMIT_COUNT>.g<SHORT_SHA>` (or `<MAJOR>.<MINOR>.<PATCH>` when built on an exact `v<MAJOR>.<MINOR>.<PATCH>` release tag) and stamps it across `xtrc --version`, `xtrc.spdx.json`, `.deb`, `.tar.gz`, `xtrc.rb`, and an immutable `v<VERSION>` GitHub Release.
+- **Acceptance Criteria**: Two distinct commits never produce the same delivery version string; `xtrc --version`, `xtrc.spdx.json`, `xtrc.rb`, `.deb`, and `.tar.gz` all report the identical unique version.
 
 ## 3. Layer 6: Technical Specifications (SPEC-*)
 
@@ -81,7 +89,7 @@ schema_version: "1.0.0"
 
 ### SPEC-CD-DELIVERY: GitHub Actions Head-of-Main Packaging and SPDX SBOM Delivery Contract
 - **ID**: SPEC-CD-DELIVERY
-- **Parent**: REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, US-CICD-01
+- **Parent**: REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, REQ-VER-POLICY, US-CICD-01
 - **Type**: TechnicalSpec
 - **Component Target**: .github/workflows/delivery.yml, scripts/generate-sbom.sh, scripts/generate-homebrew-formula.sh, Cargo.toml
 - **Verification Target**: tests/e2e/tier4_real_world.rs
@@ -90,10 +98,23 @@ schema_version: "1.0.0"
   - Triggers: `push` to `main` branch and `workflow_dispatch`.
   - Job 1 (`verify`): Runs all mandatory quality gates (`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, `cargo run -- check --strict`).
   - Job 2 (`deliver`, requires `verify`):
-    1. Compiles optimized release binary (`cargo build --release --locked`).
-    2. Generates SPDX 2.3 JSON SBOM (`dist/xtrc.spdx.json`) via `scripts/generate-sbom.sh`.
-    3. Builds Debian package (`dist/xtrc_<version>_amd64.deb`) via `cargo-deb` (embedding `/usr/share/doc/xtrc/xtrc.spdx.json`).
-    4. Packages release tarball (`dist/xtrc-v<version>-x86_64-unknown-linux-gnu.tar.gz`) containing `xtrc`, `README.md`, `LICENSE`, and `xtrc.spdx.json`.
-    5. Generates Homebrew package formula (`dist/xtrc.rb`) via `scripts/generate-homebrew-formula.sh` with computed tarball SHA-256 checksum, plus `dist/SHA256SUMS`.
-    6. Uploads `dist/*` as GitHub Actions workflow artifacts and publishes to the rolling `main-head` GitHub Release.
+    1. Checks out full Git history (`fetch-depth: 0`) and computes unique version `VERSION="$(bash scripts/compute-version.sh)"`.
+    2. Compiles optimized release binary (`XTRC_DELIVERY_VERSION="${VERSION}" cargo build --release --locked`) and verifies `./target/release/xtrc --version`.
+    3. Generates SPDX 2.3 JSON SBOM (`dist/xtrc.spdx.json`) stamped with `${VERSION}` via `scripts/generate-sbom.sh`.
+    4. Builds Debian package (`dist/xtrc_${VERSION}_amd64.deb`) via `cargo deb --no-build --deb-version "${VERSION}"` (embedding `/usr/share/doc/xtrc/xtrc.spdx.json`).
+    5. Packages release tarball (`dist/xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz`) containing `xtrc`, `README.md`, `LICENSE`, and `xtrc.spdx.json`.
+    6. Generates Homebrew package formula (`dist/xtrc.rb`) via `scripts/generate-homebrew-formula.sh` pinned to release tag `v${VERSION}`, plus `dist/SHA256SUMS`.
+    7. Uploads `dist/*` as GitHub Actions workflow artifacts, creates an immutable `v${VERSION}` GitHub Release, and refreshes the rolling `main-head` release pointer.
+
+### SPEC-VER-POLICY: Deterministic Git-Derived Version Policy Contract
+- **ID**: SPEC-VER-POLICY
+- **Parent**: REQ-VER-POLICY, US-CICD-01
+- **Type**: TechnicalSpec
+- **Component Target**: scripts/compute-version.sh, build.rs, src/cli/mod.rs
+- **Verification Target**: tests/e2e/tier4_real_world.rs
+- **Technical Specification**:
+  - Base Version Source: `package.version` in `Cargo.toml` (`<MAJOR>.<MINOR>.<PATCH>`).
+  - Exact Tagged Releases: When `HEAD` matches git tag `v<MAJOR>.<MINOR>.<PATCH>`, the version is `<MAJOR>.<MINOR>.<PATCH>`.
+  - Head-of-Main & Branch Builds: Otherwise, the version is `<MAJOR>.<MINOR>.<PATCH>-r<COMMIT_COUNT>.g<SHORT_SHA>` (where `<COMMIT_COUNT>` is `git rev-list --count HEAD` and `<SHORT_SHA>` is `git rev-parse --short=7 HEAD`).
+  - Compile-Time Injection: `build.rs` exports `XTRC_BUILD_VERSION` consumed by `clap` in `src/cli/mod.rs` so `xtrc --version` always matches the packaged delivery version.
 
