@@ -1,6 +1,6 @@
 //! xtrc CLI binary entry point.
 //!
-//! // @trace SPEC-CLI-OUTPUT, SPEC-ERR-HIERARCHY, REQ-UNIX-STREAMS, REQ-EXIT-CODES, REQ-NFR-ROBUST
+//! // @trace SPEC-CLI-OUTPUT, SPEC-ERR-HIERARCHY, SPEC-VER-BUMP, REQ-UNIX-STREAMS, REQ-EXIT-CODES, REQ-NFR-ROBUST, REQ-VER-BUMP-PATCH
 
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]

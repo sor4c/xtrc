@@ -1,6 +1,6 @@
 //! Build script embedding the deterministic version policy into `XTRC_BUILD_VERSION`.
 //!
-//! // @trace SPEC-VER-POLICY, REQ-VER-POLICY
+//! // @trace SPEC-VER-POLICY, REQ-VER-POLICY, REQ-VER-BUMP-PATCH, SPEC-VER-BUMP
 
 use std::process::Command;
 
@@ -53,7 +53,7 @@ fn main() {
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=.git/refs");
 
-    let base_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.1.0".to_string());
+    let base_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.1.1".to_string());
     let build_version = compute_git_version(&base_version);
     println!("cargo:rustc-env=XTRC_BUILD_VERSION={build_version}");
 }

@@ -134,6 +134,26 @@ Inspect the traceability graph on demand:
 
 ---
 
+## Live End-to-End Demo & Example Setup
+
+A complete, self-contained demonstration workspace is available in [`examples/demo/`](examples/demo/), modeling an e-commerce **Order & Payment Checkout Gateway** with full 7-layer traceability:
+
+- **Specification Setup**: [`examples/demo/specs/checkout.md`](examples/demo/specs/checkout.md) defines Vision (`VIS-DEMO-PAY`), Strategy, Epics, User Stories, Requirements (`REQ-DEMO-AUTH`, `REQ-DEMO-CAPTURE`), and Technical Specs.
+- **Polyglot Code & Test Annotations**:
+  - Python token authentication in [`examples/demo/src/checkout.py`](examples/demo/src/checkout.py) and [`examples/demo/tests/test_checkout.py`](examples/demo/tests/test_checkout.py).
+  - Rust transaction ledger in [`examples/demo/src/ledger.rs`](examples/demo/src/ledger.rs) and [`examples/demo/tests/test_ledger.rs`](examples/demo/tests/test_ledger.rs).
+- **Turnkey Demo Runner**: Execute `./examples/demo/run-demo.sh` to run verification, tree visualizer, matrix generator, and all export formats in one command.
+- **Resulting Reports**:
+  - [Interactive HTML5 Audit Report](examples/demo/reports/traceability-report.html)
+  - [Machine-Readable JSON Telemetry](examples/demo/reports/traceability-report.json)
+  - [Markdown PR & Release Documentation](examples/demo/reports/traceability-report.md)
+  - [CSV Compliance Matrix](examples/demo/reports/traceability-report.csv)
+  - [HTML Matrix Table](examples/demo/reports/matrix.html)
+
+For complete details, see the [Demo Documentation](examples/demo/README.md).
+
+---
+
 ## Development & Getting Started
 
 ### Turnkey Dev Container (Recommended)

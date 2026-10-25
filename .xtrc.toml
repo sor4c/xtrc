@@ -7,7 +7,7 @@ root = "."
 [specs]
 include = ["docs/**/*.md"]
 # README.md contains illustrative @trace examples for end users, not real links.
-exclude = [".agents/**", "target/**", "README.md"]
+exclude = [".agents/**", "target/**", "README.md", "examples/**"]
 
 [code]
 include = ["src/**/*.rs", "lib/**/*.*"]

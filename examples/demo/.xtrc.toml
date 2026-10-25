@@ -1,0 +1,20 @@
+version = "1"
+
+[project]
+name = "checkout-service"
+root = "."
+
+[specs]
+include = ["specs/**/*.md"]
+exclude = [".git/**", "reports/**", "run-demo.sh", "README.md"]
+
+[code]
+include = ["src/**/*.py", "src/**/*.rs"]
+extensions = [".py", ".rs"]
+
+[tests]
+include = ["tests/**/*.*"]
+
+[validation]
+strict = true
+require_test_coverage = true

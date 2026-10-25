@@ -1,0 +1,9 @@
+ID,Title,Layer,Parents,Children,Code Links,Test Links,Coverage Status
+EPIC-DEMO-PAY-ENGINE,Real-Time Payment Processing Engine,Epic,STRAT-DEMO-RELIABILITY,US-DEMO-CHECKOUT,0,0,Uncovered
+REQ-DEMO-AUTH,Tokenized Card Authentication,Requirement,US-DEMO-CHECKOUT,SPEC-DEMO-AUTH-SVC,2,3,Covered
+REQ-DEMO-CAPTURE,Atomic Transaction Capture and Settlement,Requirement,US-DEMO-CHECKOUT,SPEC-DEMO-CAPTURE-SVC,2,3,Covered
+SPEC-DEMO-AUTH-SVC,Cryptographic Token Validation Service,TechnicalSpec,REQ-DEMO-AUTH,,2,3,Covered
+SPEC-DEMO-CAPTURE-SVC,Atomic Ledger Settlement Engine,TechnicalSpec,REQ-DEMO-CAPTURE,,2,3,Covered
+STRAT-DEMO-RELIABILITY,Sub-100ms P99 Latency and PCI Zero-Trust Security,Strategy,VIS-DEMO-PAY,EPIC-DEMO-PAY-ENGINE,0,0,Uncovered
+US-DEMO-CHECKOUT,Customer One-Click Checkout,UserStory,EPIC-DEMO-PAY-ENGINE,REQ-DEMO-AUTH; REQ-DEMO-CAPTURE,0,0,Uncovered
+VIS-DEMO-PAY,"Instant, Frictionless, and Compliant Cloud Payments",Vision,,STRAT-DEMO-RELIABILITY,0,0,Uncovered
