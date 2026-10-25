@@ -5,7 +5,7 @@ title: Quantitative Non-Functional Requirements (NFR) and CI/CD Performance Gate
 version: 1.0.0
 status: approved
 governance_tracking:
-  rule_1_issue: "#15"
+  rule_1_issue: "#17"
   rule_2: "Requirements Before Design"
   rule_3: "Intent Over Implementation"
 traceability_layers:
@@ -62,6 +62,16 @@ schema_version: "1.0.0"
 - **Acceptance Criteria**: CI and CD workflows fail with a non-zero exit code if any NFR benchmark or SLA threshold fails; `perf-report.json` records measured latencies, SLA budgets, and pass/fail status across all benchmarked workloads.
 
 ## 3. Layer 6: Technical Specifications (SPEC-*)
+
+- **ID**: SPEC-PERF-BOUNDS
+- **Parent**: REQ-NFR-PERF, US-PERF-01
+- **Type**: TechnicalSpec
+- **Component Target**: src/scanner/comments.rs, src/scanner/traversal.rs, src/cli/output.rs, src/cli/tree.rs, src/cli/matrix.rs, src/cli/export.rs, src/cli/verify.rs
+- **Verification Target**: tests/perf/test_benchmarks.rs, tests/scanner/test_comments.rs, tests/cli/test_output.rs
+- **Technical Specification**:
+  - Comment scanning literal `@trace` pre-filtering rejecting non-matching lines with zero regex invocations.
+  - CLI output streams write through `write_buffered_stdout` (`BufWriter` over locked `stdout`).
+  - Sub-second execution thresholds for 1,000-file repositories.
 
 ### SPEC-PERF-HARNESS: Automated NFR Benchmark & SLA Verification Suite
 - **ID**: SPEC-PERF-HARNESS

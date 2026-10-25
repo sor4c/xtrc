@@ -1,6 +1,10 @@
 # @trace SPEC-CD-DELIVERY, SPEC-VER-POLICY, SPEC-CI-PERF, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, REQ-VER-POLICY, REQ-CI-PERF, REQ-NFR-PERF
 name: Head-of-Main Delivery
 
+concurrency:
+  group: delivery-main
+  cancel-in-progress: false
+
 on:
   push:
     branches:
@@ -95,6 +99,8 @@ jobs:
           if [ -f LICENSE ]; then cp LICENSE "${STAGE_DIR}/LICENSE"; fi
           cp dist/xtrc.spdx.json "${STAGE_DIR}/xtrc.spdx.json"
           tar -C dist -czf "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "xtrc-v${VERSION}-${TARGET}"
+          # Also emit a version-agnostic alias for binstall and release consumers
+          cp "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "dist/xtrc-${TARGET}.tar.gz"
           rm -rf "${STAGE_DIR}"
 
           # 4. Generate Homebrew Formula package (xtrc.rb) pinned to immutable release tag v${VERSION} (Requirement 1)

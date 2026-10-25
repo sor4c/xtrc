@@ -603,6 +603,10 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
         .expect(".github/workflows/delivery.yml must exist");
     let delivery_yaml: serde_yaml::Value =
         serde_yaml::from_str(&delivery_raw).expect("delivery.yml must be valid YAML");
+    assert!(
+        delivery_yaml.get("concurrency").is_some(),
+        "delivery.yml must configure concurrency to serialize release delivery"
+    );
     let deliver_job = delivery_yaml
         .get("jobs")
         .and_then(|j| j.get("deliver"))

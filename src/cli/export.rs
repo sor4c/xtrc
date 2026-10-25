@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cli::output::{escape_csv_field, StreamEnvironment, UniversalEnvelope};
+use crate::cli::output::{
+    escape_csv_field, write_buffered_stdout, StreamEnvironment, UniversalEnvelope,
+};
 use crate::cli::pipeline::load_workspace_graph;
 use crate::error::CliError;
 use crate::graph::model::TraceabilityGraph;
@@ -202,7 +204,7 @@ pub fn run_export(options: ExportOptions<'_>) -> Result<(), CliError> {
             return Err(CliError::Io(e));
         }
     } else {
-        print!("{content}");
+        write_buffered_stdout(&content)?;
     }
 
     Ok(())

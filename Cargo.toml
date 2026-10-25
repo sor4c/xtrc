@@ -12,7 +12,7 @@ keywords = ["traceability", "requirements", "vcs", "dag", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/main-head/{ name }-v{ version }-{ target }.tar.gz"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.tar.gz"
 bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 

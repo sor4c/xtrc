@@ -4,7 +4,7 @@
 //! // @trace REQ-FMT-JSON, REQ-UNIX-STREAMS, REQ-EXIT-CODES
 
 use std::fmt;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, BufWriter, IsTerminal, Write};
 use std::str::FromStr;
 use std::time::SystemTime;
 
@@ -102,6 +102,15 @@ pub fn is_terminal_stdout() -> bool {
     io::stdout().is_terminal()
 }
 
+/// Emits text content to standard output through a locked, buffered writer.
+pub fn write_buffered_stdout(content: &str) -> Result<(), CliError> {
+    let stdout = io::stdout();
+    let mut writer = BufWriter::new(stdout.lock());
+    writer.write_all(content.as_bytes()).map_err(CliError::Io)?;
+    writer.flush().map_err(CliError::Io)?;
+    Ok(())
+}
+
 /// Generic top-level envelope guaranteeing universal schema compliance across all subcommands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UniversalEnvelope<T> {
@@ -133,12 +142,15 @@ impl<T: Serialize> UniversalEnvelope<T> {
         }
     }
 
-    /// Emits pretty-printed JSON directly to standard output.
+    /// Emits pretty-printed JSON directly to standard output through a locked, buffered writer.
     pub fn print_stdout(&self) -> Result<(), CliError> {
         let json = serde_json::to_string_pretty(self).map_err(|e| CliError::InvalidArguments {
             reason: format!("JSON serialization error: {e}"),
         })?;
-        writeln!(io::stdout(), "{json}").map_err(CliError::Io)?;
+        let stdout = io::stdout();
+        let mut writer = BufWriter::new(stdout.lock());
+        writeln!(writer, "{json}").map_err(CliError::Io)?;
+        writer.flush().map_err(CliError::Io)?;
         Ok(())
     }
 }
@@ -439,6 +451,11 @@ impl StreamEmitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_write_buffered_stdout_basic() {
+        assert!(write_buffered_stdout("").is_ok());
+    }
 
     #[test]
     fn test_format_parsing() {
