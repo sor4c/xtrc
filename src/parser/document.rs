@@ -1,6 +1,6 @@
 //! Markdown specification document and YAML frontmatter parser.
 //!
-//! // @trace SPEC-FMT-FRONTMATTER, REQ-DOC-PARSE, SPEC-FMT-GRAMMAR
+//! // @trace SPEC-FMT-FRONTMATTER, REQ-DOC-PARSE, SPEC-FMT-GRAMMAR, SPEC-PERF-BOUNDS, REQ-NFR-PERF
 
 use std::collections::HashMap;
 use std::fs;
@@ -82,17 +82,17 @@ pub struct SpecDocument {
 }
 
 /// Internal builder used to accumulate child node lines and metadata.
-struct NodeBuilder {
+struct NodeBuilder<'a> {
     id: NodeId,
     title: String,
     line: usize,
     parents: Vec<NodeId>,
     explicit_type: Option<String>,
     attributes: HashMap<String, String>,
-    body_lines: Vec<String>,
+    body_lines: Vec<&'a str>,
 }
 
-impl NodeBuilder {
+impl NodeBuilder<'_> {
     fn finalize(self, path: &Path) -> Result<TraceNode, ParseError> {
         if self.id.prefix().len() < 2 {
             return Err(ParseError::GrammarViolation {
@@ -199,25 +199,33 @@ fn parse_frontmatter(
     }
 
     let trimmed_start = content.strip_prefix('\u{feff}').unwrap_or(content);
-    let lines: Vec<&str> = trimmed_start.lines().collect();
+    let mut line_iter = trimmed_start.split_inclusive('\n');
 
-    if lines.is_empty() || lines[0].trim() != "---" {
-        return Err(ParseError::InvalidFrontmatter {
-            path: path.to_path_buf(),
-            reason: "Specification file must begin with '---' YAML frontmatter fence".to_string(),
-        });
-    }
+    let first_line = match line_iter.next() {
+        Some(line) if line.trim() == "---" => line,
+        _ => {
+            return Err(ParseError::InvalidFrontmatter {
+                path: path.to_path_buf(),
+                reason: "Specification file must begin with '---' YAML frontmatter fence"
+                    .to_string(),
+            });
+        }
+    };
 
-    let mut closing_idx = None;
-    for (idx, line) in lines.iter().enumerate().skip(1) {
+    let yaml_start_byte = first_line.len();
+    let mut current_byte = yaml_start_byte;
+    let mut closing_info = None;
+
+    for (idx_after_first, line) in line_iter.enumerate() {
         if line.trim() == "---" {
-            closing_idx = Some(idx);
+            closing_info = Some((idx_after_first + 1, current_byte));
             break;
         }
+        current_byte += line.len();
     }
 
-    let closing_line_idx = match closing_idx {
-        Some(idx) => idx,
+    let (closing_line_idx, yaml_end_byte) = match closing_info {
+        Some(info) => info,
         None => {
             return Err(ParseError::InvalidFrontmatter {
                 path: path.to_path_buf(),
@@ -226,11 +234,10 @@ fn parse_frontmatter(
         }
     };
 
-    let yaml_lines = &lines[1..closing_line_idx];
-    let yaml_str = yaml_lines.join("\n");
+    let yaml_slice = &trimmed_start[yaml_start_byte..yaml_end_byte];
 
     let mut frontmatter: DocumentFrontmatter =
-        serde_yaml::from_str(&yaml_str).map_err(|err| ParseError::InvalidFrontmatter {
+        serde_yaml::from_str(yaml_slice).map_err(|err| ParseError::InvalidFrontmatter {
             path: path.to_path_buf(),
             reason: format!("YAML deserialization error: {err}"),
         })?;
@@ -322,14 +329,13 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
     let (frontmatter, body_start_line) = parse_frontmatter(content, path)?;
 
     let trimmed_start = content.strip_prefix('\u{feff}').unwrap_or(content);
-    let all_lines: Vec<&str> = trimmed_start.lines().collect();
 
     let mut in_code_block = false;
-    let mut current_node: Option<NodeBuilder> = None;
+    let mut current_node: Option<NodeBuilder<'_>> = None;
     let mut nodes: Vec<TraceNode> = Vec::new();
 
     let start_idx = body_start_line.saturating_sub(1);
-    for (line_idx, line) in all_lines.iter().enumerate().skip(start_idx) {
+    for (line_idx, line) in trimmed_start.lines().enumerate().skip(start_idx) {
         let line_number = line_idx + 1;
         let trimmed_line = line.trim();
 
@@ -337,14 +343,14 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
         if trimmed_line.starts_with("```") || trimmed_line.starts_with("~~~") {
             in_code_block = !in_code_block;
             if let Some(ref mut builder) = current_node {
-                builder.body_lines.push((*line).to_string());
+                builder.body_lines.push(line);
             }
             continue;
         }
 
         if in_code_block {
             if let Some(ref mut builder) = current_node {
-                builder.body_lines.push((*line).to_string());
+                builder.body_lines.push(line);
             }
             continue;
         }
@@ -354,7 +360,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
         let is_indented_code = line.starts_with("    ") || line.starts_with('\t');
         if !is_indented_code && trimmed_line.starts_with('#') {
             // Count leading '#' characters
-            let hash_count = trimmed_line.chars().take_while(|c| *c == '#').count();
+            let hash_count = trimmed_line.bytes().take_while(|&b| b == b'#').count();
             let remainder = trimmed_line[hash_count..].trim_start();
 
             if hash_count == 1 || hash_count == 2 {
@@ -406,7 +412,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
                 } else {
                     // Regular markdown H3/H4 heading (e.g. `### 8.1 Forward Requirements...`)
                     if let Some(ref mut builder) = current_node {
-                        builder.body_lines.push((*line).to_string());
+                        builder.body_lines.push(line);
                     }
                     continue;
                 }
@@ -416,8 +422,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
         // 3. Bullet metadata item parsing (when inside an active node)
         if let Some(ref mut builder) = current_node {
             if let Some((key, val)) = parse_bullet_item(line) {
-                let key_norm = key.to_ascii_lowercase();
-                if key_norm == "id" {
+                if key.eq_ignore_ascii_case("id") {
                     // Verify ID matches heading ID
                     if val != builder.id.as_str() {
                         return Err(ParseError::GrammarViolation {
@@ -430,10 +435,11 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
                             ),
                         });
                     }
-                } else if matches!(
-                    key_norm.as_str(),
-                    "parent" | "parents" | "parent requirement" | "parent requirements"
-                ) {
+                } else if key.eq_ignore_ascii_case("parent")
+                    || key.eq_ignore_ascii_case("parents")
+                    || key.eq_ignore_ascii_case("parent requirement")
+                    || key.eq_ignore_ascii_case("parent requirements")
+                {
                     if !val.eq_ignore_ascii_case("none") && !val.is_empty() {
                         let unbracketed = val.trim_start_matches('[').trim_end_matches(']');
                         for part in unbracketed.split(',') {
@@ -448,14 +454,14 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
                             }
                         }
                     }
-                } else if matches!(key_norm.as_str(), "type" | "layer") {
+                } else if key.eq_ignore_ascii_case("type") || key.eq_ignore_ascii_case("layer") {
                     builder.explicit_type = Some(val.to_string());
                 }
 
                 builder.attributes.insert(key.to_string(), val.to_string());
             }
 
-            builder.body_lines.push((*line).to_string());
+            builder.body_lines.push(line);
         }
     }
 

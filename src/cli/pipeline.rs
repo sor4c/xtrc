@@ -1,16 +1,18 @@
 //! Common pipeline coordinator for repository root discovery, file traversal,
 //! document parsing, comment scanning, and in-memory DAG construction.
 //!
-//! // @trace SPEC-CLI-OUTPUT, SPEC-DISC-DISCOVERY, SPEC-DISC-TRAVERSAL, SPEC-DAG-STORAGE
-//! // @trace REQ-CFG-DISCOVERY, REQ-IGNORE-RULES, REQ-DOC-PARSE, REQ-CODE-SCAN, REQ-TEST-SCAN
+//! // @trace SPEC-CLI-OUTPUT, SPEC-DISC-DISCOVERY, SPEC-DISC-TRAVERSAL, SPEC-DAG-STORAGE, SPEC-PERF-BOUNDS
+//! // @trace REQ-CFG-DISCOVERY, REQ-IGNORE-RULES, REQ-DOC-PARSE, REQ-CODE-SCAN, REQ-TEST-SCAN, REQ-NFR-PERF
 
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
 use crate::config::discovery::discover_workspace;
 use crate::config::WorkspaceConfig;
-use crate::error::CliError;
+use crate::error::{CliError, ParseError};
 use crate::graph::model::TraceabilityGraph;
-use crate::model::LinkKind;
+use crate::model::{LinkKind, TraceNode};
 use crate::parser::document::parse_spec_file;
 use crate::scanner::comments::scan_workspace_comments;
 use crate::scanner::traversal::{categorize_files, walk_workspace};
@@ -31,11 +33,20 @@ pub fn load_workspace_graph(
     let all_files = walk_workspace(&root, &config)?;
     let categorized = categorize_files(&root, &all_files, &config);
 
-    let mut all_nodes = Vec::new();
-    for spec_file in &categorized.specs {
-        let nodes = parse_spec_file(spec_file)?;
-        all_nodes.extend(nodes);
-    }
+    let all_nodes: Vec<TraceNode> = if categorized.specs.len() <= 2 {
+        let mut nodes = Vec::new();
+        for spec_file in &categorized.specs {
+            nodes.extend(parse_spec_file(spec_file)?);
+        }
+        nodes
+    } else {
+        let per_spec: Result<Vec<Vec<TraceNode>>, ParseError> = categorized
+            .specs
+            .par_iter()
+            .map(|spec_file| parse_spec_file(spec_file))
+            .collect();
+        per_spec?.into_iter().flatten().collect()
+    };
 
     let mut all_links = Vec::new();
 
@@ -53,17 +64,9 @@ pub fn load_workspace_graph(
     all_links.extend(test_links);
 
     // 3. Scan remaining un-categorized workspace text files (polyglot scripts, migrations, etc.)
-    let mut other_files = Vec::new();
-    for file in &all_files {
-        if !categorized.specs.contains(file)
-            && !categorized.code.contains(file)
-            && !categorized.tests.contains(file)
-        {
-            other_files.push(file.clone());
-        }
-    }
-    if !other_files.is_empty() {
-        let other_links = scan_workspace_comments(&other_files, Some(&root), None)?;
+    // Categorized in O(N) during `categorize_files` without O(N^2) Vec::contains scans.
+    if !categorized.other.is_empty() {
+        let other_links = scan_workspace_comments(&categorized.other, Some(&root), None)?;
         all_links.extend(other_links);
     }
 

@@ -1,13 +1,17 @@
 //! Polyglot comment regex scanner extracting `@trace` annotations across programming languages.
 //!
-//! // @trace SPEC-SCAN-COMMENTS, REQ-CODE-SCAN, REQ-TEST-SCAN, US-CODE-01, US-TEST-01
+//! // @trace SPEC-SCAN-COMMENTS, SPEC-PERF-BOUNDS, REQ-CODE-SCAN, REQ-TEST-SCAN, REQ-NFR-PERF, US-CODE-01, US-TEST-01
 
-use std::fs;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use rayon::prelude::*;
+
 use crate::error::ParseError;
 use crate::model::{LinkKind, NodeId, TraceLink};
+use crate::scanner::traversal::{is_binary_buffer, BINARY_SNIFF_BUFFER_SIZE};
 
 /// Compiled regular expression matching polyglot `@trace` comment annotations.
 ///
@@ -26,6 +30,34 @@ static TRACE_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
         Err(_) => unreachable!(),
     }
 });
+
+/// Fast literal pre-filter checking whether a byte slice contains `@trace` (case-insensitive).
+///
+/// Scans for `@` (0x40) via slice byte search and verifies the subsequent 5 bytes
+/// match ASCII `trace` case-insensitively. This avoids invoking the full regex engine
+/// or splitting buffers into lines when no `@trace` marker is present.
+#[inline]
+#[must_use]
+pub fn contains_trace_marker_bytes(bytes: &[u8]) -> bool {
+    find_next_trace_marker(bytes, 0).is_some()
+}
+
+/// Finds the byte offset of the next `@` that begins an ASCII case-insensitive `@trace`
+/// sequence at or after `from`.
+#[inline]
+fn find_next_trace_marker(bytes: &[u8], mut from: usize) -> Option<usize> {
+    while from + 6 <= bytes.len() {
+        let rest = bytes.get(from..)?;
+        let rel_at = rest.iter().position(|&b| b == b'@')?;
+        let at_idx = from + rel_at;
+        let candidate = bytes.get(at_idx + 1..at_idx + 6)?;
+        if candidate.eq_ignore_ascii_case(b"trace") {
+            return Some(at_idx);
+        }
+        from = at_idx + 1;
+    }
+    None
+}
 
 /// Known single-line comment delimiters that extend to the end of the line.
 const SINGLE_LINE_COMMENT_DELIMITERS: &[&str] = &["//", "#", "--", ";", "%", "rem ", "REM "];
@@ -306,8 +338,24 @@ pub fn scan_comment_line(
     file_path: &Path,
     default_kind: Option<LinkKind>,
 ) -> Vec<TraceLink> {
-    let mut links = Vec::new();
+    if !contains_trace_marker_bytes(line.as_bytes()) {
+        return Vec::new();
+    }
 
+    let mut links = Vec::new();
+    scan_matching_line_into(line, line_number, file_path, default_kind, &mut links);
+    links
+}
+
+/// Internal helper that runs `TRACE_REGEX` on a line already confirmed to contain `@trace`
+/// and appends extracted links directly into `links`.
+fn scan_matching_line_into(
+    line: &str,
+    line_number: usize,
+    file_path: &Path,
+    default_kind: Option<LinkKind>,
+    links: &mut Vec<TraceLink>,
+) {
     for cap in TRACE_REGEX.captures_iter(line) {
         // Find exact start position of '@' in the match to verify string literal exclusion
         let full_match = match cap.get(0) {
@@ -315,7 +363,7 @@ pub fn scan_comment_line(
             None => continue,
         };
         let match_str = full_match.as_str();
-        let at_offset = match_str.to_ascii_lowercase().find("@trace").unwrap_or(0);
+        let at_offset = find_next_trace_marker(match_str.as_bytes(), 0).unwrap_or(0);
         let at_trace_pos = full_match.start() + at_offset;
 
         if is_string_literal(line, at_trace_pos) {
@@ -358,26 +406,85 @@ pub fn scan_comment_line(
             }
         }
     }
-
-    links
 }
 
 /// Scans an in-memory UTF-8 text string for `@trace` comment annotations.
 ///
-/// Records 1-indexed line numbers and normalizes the stored file path relative to `base_root`.
+/// Employs fast literal pre-filtering and lazy line-number resolution (`nlscan` high-water mark):
+/// - If no `@trace` marker exists in `text`, returns immediately without splitting lines or running regex.
+/// - When a candidate `@trace` marker is located, isolates the enclosing line (`\n` to `\n`),
+///   counts newlines only from the previous high-water mark offset, and evaluates `TRACE_REGEX`
+///   exclusively on that candidate line.
 pub fn scan_comments_text(
     text: &str,
     file_path: &Path,
     base_root: Option<&Path>,
     default_kind: Option<LinkKind>,
 ) -> Vec<TraceLink> {
+    let bytes = text.as_bytes();
+    let mut first_hit = match find_next_trace_marker(bytes, 0) {
+        Some(pos) => pos,
+        None => return Vec::new(),
+    };
+
     let normalized_path = normalize_source_path(file_path, base_root);
     let mut links = Vec::new();
 
-    for (idx, line) in text.lines().enumerate() {
-        let line_number = idx + 1;
-        let mut line_links = scan_comment_line(line, line_number, &normalized_path, default_kind);
-        links.append(&mut line_links);
+    // High-water mark for lazy 1-indexed line counting (`nlscan` pattern)
+    let mut last_nl_offset = 0usize;
+    let mut current_line_number = 1usize;
+
+    loop {
+        // Locate enclosing line start (byte after preceding '\n', or 0)
+        let line_start = match bytes.get(..first_hit) {
+            Some(prefix) => match prefix.iter().rposition(|&b| b == b'\n') {
+                Some(nl_pos) => nl_pos + 1,
+                None => 0,
+            },
+            None => 0,
+        };
+
+        // Lazily advance line number from `last_nl_offset` up to `line_start`
+        if let Some(scanned_slice) = bytes.get(last_nl_offset..line_start) {
+            current_line_number += scanned_slice.iter().filter(|&&b| b == b'\n').count();
+        }
+        last_nl_offset = line_start;
+
+        // Locate enclosing line end (next '\n' at or after `first_hit`, or EOF)
+        let line_end = match bytes.get(first_hit..) {
+            Some(suffix) => match suffix.iter().position(|&b| b == b'\n') {
+                Some(rel_nl) => first_hit + rel_nl,
+                None => bytes.len(),
+            },
+            None => bytes.len(),
+        };
+
+        // Strip optional trailing '\r' for CRLF compatibility
+        let trimmed_end = if line_end > line_start && bytes.get(line_end - 1) == Some(&b'\r') {
+            line_end - 1
+        } else {
+            line_end
+        };
+
+        if let Some(line_str) = text.get(line_start..trimmed_end) {
+            scan_matching_line_into(
+                line_str,
+                current_line_number,
+                &normalized_path,
+                default_kind,
+                &mut links,
+            );
+        }
+
+        // Advance search past the end of the current line so multiple `@trace` markers
+        // on the same line are not rescanned twice.
+        if line_end >= bytes.len() {
+            break;
+        }
+        match find_next_trace_marker(bytes, line_end + 1) {
+            Some(next_pos) => first_hit = next_pos,
+            None => break,
+        }
     }
 
     links
@@ -385,15 +492,51 @@ pub fn scan_comments_text(
 
 /// Reads a source code or test file from disk and scans it for `@trace` comment annotations.
 ///
+/// Performs single-pass binary sniffing on the initial read buffer: if the file contains
+/// a null byte (`0x00`) in its initial [`BINARY_SNIFF_BUFFER_SIZE`] bytes, it is skipped
+/// immediately without reading the remainder of the file.
+///
 /// Returns `Err(ParseError::Io)` if the file cannot be opened or read.
 pub fn scan_comments_file(
     file_path: &Path,
     base_root: Option<&Path>,
     default_kind: Option<LinkKind>,
 ) -> Result<Vec<TraceLink>, ParseError> {
-    let content = fs::read_to_string(file_path).map_err(|err| ParseError::Io {
+    let mut file = File::open(file_path).map_err(|err| ParseError::Io {
         path: file_path.to_path_buf(),
         source: err,
+    })?;
+
+    let file_len = file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+    let mut buf = Vec::with_capacity(file_len.clamp(BINARY_SNIFF_BUFFER_SIZE, 64 * 1024));
+
+    // Read initial chunk to check for binary content in the same file descriptor pass
+    let mut header = [0u8; BINARY_SNIFF_BUFFER_SIZE];
+    let n = file.read(&mut header).map_err(|err| ParseError::Io {
+        path: file_path.to_path_buf(),
+        source: err,
+    })?;
+    if n == 0 {
+        return Ok(Vec::new());
+    }
+    if is_binary_buffer(&header[..n]) {
+        return Ok(Vec::new());
+    }
+
+    buf.extend_from_slice(&header[..n]);
+    file.read_to_end(&mut buf).map_err(|err| ParseError::Io {
+        path: file_path.to_path_buf(),
+        source: err,
+    })?;
+
+    // Fast literal pre-filter on raw bytes BEFORE UTF-8 validation or line splitting
+    if !contains_trace_marker_bytes(&buf) {
+        return Ok(Vec::new());
+    }
+
+    let content = String::from_utf8(buf).map_err(|err| ParseError::Io {
+        path: file_path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, err),
     })?;
 
     Ok(scan_comments_text(
@@ -404,16 +547,28 @@ pub fn scan_comments_file(
     ))
 }
 
-/// Batch-scans a collection of workspace source and test files, returning all extracted `TraceLink`s.
+/// Batch-scans a collection of workspace source and test files in parallel, returning all extracted `TraceLink`s.
 pub fn scan_workspace_comments(
     files: &[PathBuf],
     base_root: Option<&Path>,
     default_kind: Option<LinkKind>,
 ) -> Result<Vec<TraceLink>, ParseError> {
-    let mut all_links = Vec::new();
+    if files.len() <= 4 {
+        let mut all_links = Vec::new();
+        for file in files {
+            let mut file_links = scan_comments_file(file, base_root, default_kind)?;
+            all_links.append(&mut file_links);
+        }
+        return Ok(all_links);
+    }
 
-    for file in files {
-        let mut file_links = scan_comments_file(file, base_root, default_kind)?;
+    let per_file_results: Result<Vec<Vec<TraceLink>>, ParseError> = files
+        .par_iter()
+        .map(|file| scan_comments_file(file, base_root, default_kind))
+        .collect();
+
+    let mut all_links = Vec::new();
+    for mut file_links in per_file_results? {
         all_links.append(&mut file_links);
     }
 
@@ -684,5 +839,41 @@ mod tests {
             );
             assert_eq!(links[0].target_id().as_str(), expected_id);
         }
+    }
+
+    #[test]
+    fn test_contains_trace_marker_bytes_fast_prefilter() {
+        assert!(!contains_trace_marker_bytes(b""));
+        assert!(!contains_trace_marker_bytes(b"@trac"));
+        assert!(!contains_trace_marker_bytes(b"fn main() { let x = 42; }"));
+        assert!(!contains_trace_marker_bytes(b"user@example.com @other tag"));
+        assert!(contains_trace_marker_bytes(b"// @trace REQ-01"));
+        assert!(contains_trace_marker_bytes(b"// @TRACE:TEST SPEC-01"));
+        assert!(contains_trace_marker_bytes(
+            b"email@domain.com // @TrAcE REQ-02"
+        ));
+    }
+
+    #[test]
+    fn test_lazy_newline_counting_and_crlf_handling() {
+        let mut content = String::new();
+        for i in 1..=250 {
+            if i == 100 {
+                content.push_str("// @trace REQ-LINE-100\r\n");
+            } else if i == 250 {
+                content.push_str("// @trace:test SPEC-LINE-250");
+            } else {
+                content.push_str("let v = 1; // regular comment with @author tag\r\n");
+            }
+        }
+
+        let links = scan_comments_text(&content, Path::new("src/lazy.rs"), None, None);
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].target_id().as_str(), "REQ-LINE-100");
+        assert_eq!(links[0].line, 100);
+        assert_eq!(links[0].kind, LinkKind::SourceCode);
+        assert_eq!(links[1].target_id().as_str(), "SPEC-LINE-250");
+        assert_eq!(links[1].line, 250);
+        assert_eq!(links[1].kind, LinkKind::AutomatedTest);
     }
 }

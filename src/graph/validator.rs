@@ -1,7 +1,7 @@
 //! 4-Stage Bidirectional Validator Engine verifying referential integrity,
 //! root justification, forward coverage, and backward provenance to Vision.
 //!
-//! // @trace SPEC-DAG-VALIDATE, REQ-BROKEN-LINK, REQ-FORWARD-COV, REQ-BACKWARD-JUST
+//! // @trace SPEC-DAG-VALIDATE, SPEC-PERF-BOUNDS, REQ-NFR-PERF, REQ-BROKEN-LINK, REQ-FORWARD-COV, REQ-BACKWARD-JUST
 //! // @trace REQ-ORPHAN-DETECT, REQ-STRICT-GATE, REQ-EXIT-CODES, US-VERIFY-01, US-ORPHAN-01, US-GATE-01
 
 use std::collections::{BTreeSet, VecDeque};
@@ -416,6 +416,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     // STAGE 2: Orphan Nodes (Root Justification)
     // -------------------------------------------------------------------------
     let mut orphan_count = 0usize;
+    let mut orphan_ids: BTreeSet<&NodeId> = BTreeSet::new();
 
     for node in graph.all_nodes() {
         // Layer::Vision is the only valid root layer exempt from parent requirement
@@ -434,6 +435,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         let has_resolved_parent = node.parents.iter().any(|p| graph.has_node(p));
         if node.parents.is_empty() || !has_resolved_parent {
             orphan_count += 1;
+            orphan_ids.insert(&node.id);
             violations.push(ValidationViolation::OrphanNode {
                 id: node.id.clone(),
                 layer: node.layer,
@@ -454,13 +456,14 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         .filter(|n| n.layer == Layer::Requirement)
         .collect();
 
-    // If id_filter is set, scope requirements to connected subgraph
+    // If id_filter is set, scope requirements to connected subgraph in O(V + E)
     if let Some(ref target_id) = options.id_filter {
+        let target_descendants = graph.descendants_of(target_id);
+        let target_ancestors = graph.ancestors_of(target_id);
         req_nodes.retain(|n| {
             n.id == *target_id
-                || graph.children_of(&n.id).contains(target_id)
-                || graph.descendants_of(&n.id).contains(target_id)
-                || graph.ancestors_of(&n.id).contains(target_id)
+                || target_descendants.contains(&n.id)
+                || target_ancestors.contains(&n.id)
         });
     }
 
@@ -534,29 +537,23 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     // -------------------------------------------------------------------------
     // STAGE 4: Backward Justification (Upward Provenance to Vision)
     // -------------------------------------------------------------------------
+    let vision_reachable = compute_vision_reachable(graph);
     for node in graph.all_nodes() {
         if node.layer.is_root() {
             continue;
         }
 
-        // Check if node can reach any Vision root
-        if !can_reach_vision(graph, &node.id) {
-            // Only report if not already reported as an immediate orphan to prevent duplicate diagnostics
-            let already_orphan = violations.iter().any(|v| match v {
-                ValidationViolation::OrphanNode { id, .. } => id == &node.id,
-                _ => false,
+        // Check if node can reach any Vision root via precomputed O(V + E) set
+        if !vision_reachable.contains(&node.id) && !orphan_ids.contains(&node.id) {
+            violations.push(ValidationViolation::Unjustified {
+                id: node.id.clone(),
+                layer: node.layer,
+                origin: node.file_origin.clone(),
+                message: format!(
+                    "Node '{}' ({}) at {} has no directed provenance path to a Vision root",
+                    node.id, node.layer, node.file_origin
+                ),
             });
-            if !already_orphan {
-                violations.push(ValidationViolation::Unjustified {
-                    id: node.id.clone(),
-                    layer: node.layer,
-                    origin: node.file_origin.clone(),
-                    message: format!(
-                        "Node '{}' ({}) at {} has no directed provenance path to a Vision root",
-                        node.id, node.layer, node.file_origin
-                    ),
-                });
-            }
         }
     }
 
@@ -673,28 +670,27 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     }
 }
 
-/// Helper function performing breadth-first upward traversal to determine
-/// whether `start_id` possesses a valid directed path terminating at a `Layer::Vision` root.
-fn can_reach_vision(graph: &TraceabilityGraph, start_id: &NodeId) -> bool {
-    let mut queue: VecDeque<NodeId> = VecDeque::new();
+/// Computes the set of all nodes in `graph` that possess a valid directed path
+/// terminating at a `Layer::Vision` root in a single $O(V + E)$ forward BFS pass.
+fn compute_vision_reachable(graph: &TraceabilityGraph) -> BTreeSet<NodeId> {
     let mut visited: BTreeSet<NodeId> = BTreeSet::new();
+    let mut queue: VecDeque<&NodeId> = VecDeque::new();
 
-    queue.push_back(start_id.clone());
-    visited.insert(start_id.clone());
+    for node in graph.all_nodes() {
+        if node.layer.is_root() && visited.insert(node.id.clone()) {
+            queue.push_back(&node.id);
+        }
+    }
 
     while let Some(current_id) = queue.pop_front() {
-        if let Some(node) = graph.get_node(&current_id) {
-            if node.layer.is_root() {
-                return true;
-            }
-            for parent_id in graph.parents_of(&current_id) {
-                if visited.insert(parent_id.clone()) {
-                    queue.push_back(parent_id.clone());
-                }
+        for child_id in graph.children_of(current_id) {
+            if graph.has_node(child_id) && visited.insert(child_id.clone()) {
+                queue.push_back(child_id);
             }
         }
     }
-    false
+
+    visited
 }
 
 #[cfg(test)]

@@ -31,6 +31,8 @@ pub struct CategorizedFiles {
     pub code: Vec<PathBuf>,
     /// Test files matching `tests.include`.
     pub tests: Vec<PathBuf>,
+    /// Remaining discovered text files not matched by `specs`, `code`, or `tests`.
+    pub other: Vec<PathBuf>,
     /// All discovered text files in the workspace.
     pub all_text: Vec<PathBuf>,
 }
@@ -232,9 +234,10 @@ pub fn build_glob_set(patterns: &[String]) -> GlobSet {
     }
 }
 
-/// Partitions discovered candidate files into specification, source code, and test categories.
+/// Partitions discovered candidate files into specification, source code, test, and other categories
+/// in a single $O(N)$ pass.
 ///
-/// // @trace SPEC-DISC-TRAVERSAL, REQ-IGNORE-RULES
+/// // @trace SPEC-DISC-TRAVERSAL, SPEC-PERF-BOUNDS, REQ-IGNORE-RULES, REQ-NFR-PERF
 pub fn categorize_files(
     root: &Path,
     all_files: &[PathBuf],
@@ -244,6 +247,7 @@ pub fn categorize_files(
         specs: Vec::new(),
         code: Vec::new(),
         tests: Vec::new(),
+        other: Vec::new(),
         all_text: all_files.to_vec(),
     };
 
@@ -257,8 +261,13 @@ pub fn categorize_files(
             Ok(p) => p,
             Err(_) => path,
         };
-        let rel_str = rel_path.to_string_lossy().replace('\\', "/");
-        let clean_rel = rel_str.strip_prefix("./").unwrap_or(&rel_str);
+        let rel_str = rel_path.to_string_lossy();
+        let normalized_cow = if rel_str.contains('\\') {
+            std::borrow::Cow::Owned(rel_str.replace('\\', "/"))
+        } else {
+            rel_str
+        };
+        let clean_rel = normalized_cow.strip_prefix("./").unwrap_or(&normalized_cow);
 
         // 1. Check specs match
         if specs_include.is_match(clean_rel) && !specs_exclude.is_match(clean_rel) {
@@ -276,7 +285,11 @@ pub fn categorize_files(
         if code_include.is_match(clean_rel) && has_matching_extension(path, &config.code.extensions)
         {
             categorized.code.push(path.clone());
+            continue;
         }
+
+        // 4. Remaining uncategorized workspace text files
+        categorized.other.push(path.clone());
     }
 
     categorized
@@ -317,16 +330,15 @@ pub fn glob_match(pattern: &str, path_str: &str) -> bool {
     }
 }
 
-/// Checks if a file path matches any of the configured file extensions.
+/// Checks if a file path matches any of the configured file extensions without heap allocation.
 fn has_matching_extension(path: &Path, extensions: &[String]) -> bool {
     if extensions.is_empty() {
         return true;
     }
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        let dotted = format!(".{ext}");
         extensions
             .iter()
-            .any(|configured| configured == &dotted || configured == ext)
+            .any(|configured| configured.strip_prefix('.').unwrap_or(configured) == ext)
     } else {
         false
     }
