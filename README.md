@@ -4,6 +4,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org)
+[![Verify](https://github.com/sor4c/xtrc/actions/workflows/ci.yml/badge.svg)](https://github.com/sor4c/xtrc/actions/workflows/ci.yml)
+[![Head-of-Main Delivery](https://github.com/sor4c/xtrc/actions/workflows/delivery.yml/badge.svg)](https://github.com/sor4c/xtrc/actions/workflows/delivery.yml)
 
 ---
 
@@ -144,18 +146,34 @@ If developing locally without Docker/Dev Containers, ensure you have:
 - **Cargo**: Rust's package manager and build system.
 
 ### Installation & Packaging
-`xtrc` can be installed via standard Rust and Linux package managers:
-```bash
-# Install directly via Cargo
-cargo install --path .
+Every verified push to `main` automatically runs the [Head-of-Main Delivery workflow](.github/workflows/delivery.yml) and publishes ready-to-install packages to the [`main-head` GitHub Release](https://github.com/sor4c/xtrc/releases/tag/main-head):
 
-# Install prebuilt binary via cargo-binstall
+```bash
+# 1. Install via Homebrew (using the delivered xtrc.rb formula)
+curl -fsSL https://github.com/sor4c/xtrc/releases/download/main-head/xtrc.rb -o /tmp/xtrc.rb
+brew install --formula /tmp/xtrc.rb
+
+# 2. Install Debian package (.deb) on Debian / Ubuntu
+curl -fsSLO https://github.com/sor4c/xtrc/releases/download/main-head/xtrc_0.1.0_amd64.deb
+sudo dpkg -i xtrc_0.1.0_amd64.deb
+
+# 3. Install prebuilt binary via cargo-binstall
 cargo binstall xtrc
 
-# Install Debian package (.deb) from a release / head-of-main delivery
-sudo dpkg -i xtrc_<version>_amd64.deb
+# 4. Install portable archive (.tar.gz) directly
+curl -fsSL https://github.com/sor4c/xtrc/releases/download/main-head/xtrc-v0.1.0-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+sudo install -m 755 xtrc-v0.1.0-x86_64-unknown-linux-gnu/xtrc /usr/local/bin/xtrc
+
+# 5. Build and install from source via Cargo
+cargo install --path .
 ```
-Every automated head-of-`main` delivery in [`.github/workflows/delivery.yml`](.github/workflows/delivery.yml) produces a prebuilt `.tar.gz` archive, a Debian `.deb` package, `SHA256SUMS`, and an SPDX 2.3 JSON Software Bill of Materials (`xtrc.spdx.json`).
+
+### Software Bill of Materials (SPDX 2.3 JSON SBOM)
+Every delivery includes a deterministic **SPDX 2.3 JSON SBOM** (`xtrc.spdx.json`):
+- Embedded inside the `.tar.gz` release archive and Homebrew doc directory (`xtrc.spdx.json`).
+- Installed by the Debian `.deb` package at `/usr/share/doc/xtrc/xtrc.spdx.json`.
+- Attached as a standalone asset on the [`main-head` GitHub Release](https://github.com/sor4c/xtrc/releases/tag/main-head) alongside `SHA256SUMS`.
+- Regenerated locally at any time via `./scripts/generate-sbom.sh dist/xtrc.spdx.json`.
 
 ### Build and Test Commands
 ```bash
