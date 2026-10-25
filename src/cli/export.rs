@@ -1,6 +1,6 @@
 //! Subcommand handler for `xtrc export` generating compliance audit documentation.
 //!
-//! // @trace SPEC-CLI-EXPORT, SPEC-REPORT-HTML, REQ-CMD-EXPORT, REQ-REPORT-HTML, REQ-REPORT-MACHINE, REQ-EXIT-CODES, REQ-UNIX-STREAMS
+//! // @trace SPEC-CLI-EXPORT, SPEC-REPORT-HTML, SPEC-DEMO-REPORTS, REQ-CMD-EXPORT, REQ-REPORT-HTML, REQ-REPORT-MACHINE, REQ-DEMO-REPORTS, REQ-EXIT-CODES, REQ-UNIX-STREAMS
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;

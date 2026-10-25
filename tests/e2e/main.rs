@@ -8,6 +8,7 @@
 //! // @trace:test REQ-EXIT-CODES, REQ-UNIX-STREAMS
 
 mod common;
+mod test_demo;
 mod tier1_features;
 mod tier2_boundaries;
 mod tier3_combinations;
