@@ -168,11 +168,15 @@ The system is organized into decoupled modules with strict boundaries:
 
 ### SPEC-SCAN-COMMENTS: Regex-Oriented Polyglot Source & Test Comment Scanner
 - **ID**: SPEC-SCAN-COMMENTS
-- **Parent Requirements**: REQ-CODE-SCAN, REQ-TEST-SCAN, US-CODE-01, US-TEST-01
+- **Parent Requirements**: REQ-CODE-SCAN, REQ-TEST-SCAN, REQ-NFR-PERF, US-CODE-01, US-TEST-01
 - **Component Target**: src/scanner/comments.rs
 - **Verification Target**: tests/scanner/test_comments.rs
 - **Technical Specification**:
-  - Scanning Engine: Line-oriented regular expression parser scanning UTF-8 source files without requiring language-specific AST compilers.
+  - Scanning Engine: Fast literal pre-filtered, line-oriented regular expression parser scanning UTF-8 source files without requiring language-specific AST compilers.
+  - Fast Literal Pre-Filter & Lazy Line Counting:
+    - Scans raw byte/text buffers for the `@` byte followed by ASCII case-insensitive `trace` before invoking full regex capture matching or splitting the file into lines.
+    - Files or buffers containing no `@trace` marker return immediately in a single byte scan with zero line splits and zero regex evaluations.
+    - When a candidate `@trace` marker is found, isolates only the enclosing line (`\n` to `\n`) and lazily advances the 1-indexed line counter from the last matched offset (`nlscan` high-water mark pattern).
   - Extraction Regex Pattern:
     ```regex
     (?i:@trace(?::[a-zA-Z_-]+)?)\s+(?P<ids>[A-Z][A-Z0-9]*(-[A-Z0-9]+)+(?:\s*,\s*[A-Z][A-Z0-9]*(-[A-Z0-9]+)+)*)
@@ -428,11 +432,13 @@ The system is organized into decoupled modules with strict boundaries:
 ### SPEC-PERF-BOUNDS: High-Performance Multi-Core Execution & Memory Budget
 - **ID**: SPEC-PERF-BOUNDS
 - **Parent Requirements**: REQ-NFR-PERF, US-UNIX-01
-- **Component Target**: src/lib.rs
-- **Verification Target**: tests/perf/test_benchmarks.rs
+- **Component Target**: src/lib.rs, src/cli/pipeline.rs, src/scanner/comments.rs, src/parser/document.rs, src/graph/validator.rs
+- **Verification Target**: tests/perf/test_benchmarks.rs, tests/scanner/test_comments.rs
 - **Technical Specification**:
-  - Parallel Traversal: Leverages `ignore::WalkParallel` with work-stealing thread pools to pipeline directory discovery and file comment scanning.
-  - Memory Footprint Bounding: Uses string interning and bounded streaming buffers for binary file sniffing (<512 bytes read per asset); overall memory usage is bounded by repository metadata size (<50MB for 10,000 files).
+  - Parallel Traversal & Single-Pass Partitioning: Leverages `ignore::WalkParallel` and `rayon` work-stealing thread pools to pipeline directory discovery, single-pass `O(N)` file categorization (including `other` text files without $O(N^2)$ linear slice searches), parallel specification parsing, and parallel comment scanning.
+  - Literal Pre-Filtered Scanning & Single-Pass File Inspection: Performs binary NUL-byte sniffing on the initial read buffer and applies fast `@trace` literal pre-filtering with lazy line-number resolution (`nlscan`) so files without annotations incur zero regex engine or line-splitting overhead.
+  - Zero-Copy Frontmatter Slicing & Linear-Time Graph Validation: Slices YAML frontmatter directly without whole-file `Vec<&str>` line tables, computes upward `Vision` reachability in a single $O(V + E)$ pass from root nodes, traverses pre-sorted cycle adjacency slices without per-visit cloning, and batches CLI output over locked `BufWriter` streams.
+  - Memory Footprint Bounding: Uses bounded streaming buffers for binary file sniffing (<512 bytes read per asset); overall memory usage is bounded by repository metadata size (<50MB for 10,000 files).
   - Sub-Second Target: Full repository traversal, graph parsing, cycle detection, and verification completes in <500ms for repositories under 10,000 files.
 - **Validation & Behavioral Rules**:
   - Zero network round-trips or disk-bound temporary databases.

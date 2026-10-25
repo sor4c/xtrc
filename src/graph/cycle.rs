@@ -1,6 +1,6 @@
 //! 3-Color DFS cycle detection and circular dependency diagnostics.
 //!
-//! // @trace SPEC-DAG-CYCLE, REQ-CYCLE-DETECT, REQ-EXIT-CODES, US-CYCLE-01
+//! // @trace SPEC-DAG-CYCLE, SPEC-PERF-BOUNDS, REQ-NFR-PERF, REQ-CYCLE-DETECT, REQ-EXIT-CODES, US-CYCLE-01
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -129,12 +129,9 @@ impl<'a> CycleDetector<'a> {
     /// Returns `Err(GraphError::CycleDetected)` with the formatted cycle chain
     /// of the first deterministic cycle found.
     pub fn detect_cycles(&mut self) -> Result<(), GraphError> {
-        let mut node_ids: Vec<NodeId> = self.graph.all_node_ids().cloned().collect();
-        node_ids.sort();
-
-        for node_id in node_ids {
-            if self.get_color(&node_id) == NodeColor::White {
-                if let Some(cycle) = self.dfs_find_first(&node_id) {
+        for node_id in self.graph.all_node_ids() {
+            if self.get_color(node_id) == NodeColor::White {
+                if let Some(cycle) = self.dfs_find_first(node_id) {
                     return Err(GraphError::from(cycle));
                 }
             }
@@ -149,12 +146,9 @@ impl<'a> CycleDetector<'a> {
         self.call_stack.clear();
         self.cycles.clear();
 
-        let mut node_ids: Vec<NodeId> = self.graph.all_node_ids().cloned().collect();
-        node_ids.sort();
-
-        for node_id in node_ids {
-            if self.get_color(&node_id) == NodeColor::White {
-                self.dfs_collect_all(&node_id);
+        for node_id in self.graph.all_node_ids() {
+            if self.get_color(node_id) == NodeColor::White {
+                self.dfs_collect_all(node_id);
             }
         }
 
@@ -172,26 +166,23 @@ impl<'a> CycleDetector<'a> {
         self.colors.insert(current.clone(), NodeColor::Gray);
         self.call_stack.push(current.clone());
 
-        let mut neighbors: Vec<NodeId> = self.graph.children_of(current).to_vec();
-        neighbors.sort();
-
-        for neighbor in neighbors {
+        for neighbor in self.graph.children_of(current) {
             // Missing nodes that are broken parent references are skipped
-            if !self.graph.has_node(&neighbor) {
+            if !self.graph.has_node(neighbor) {
                 continue;
             }
 
-            match self.get_color(&neighbor) {
+            match self.get_color(neighbor) {
                 NodeColor::White => {
-                    if let Some(cycle) = self.dfs_find_first(&neighbor) {
+                    if let Some(cycle) = self.dfs_find_first(neighbor) {
                         return Some(cycle);
                     }
                 }
                 NodeColor::Gray => {
                     // Back-edge detected! Reconstruct cycle from call_stack
-                    if let Some(pos) = self.call_stack.iter().position(|id| id == &neighbor) {
+                    if let Some(pos) = self.call_stack.iter().position(|id| id == neighbor) {
                         let path = self.call_stack[pos..].to_vec();
-                        return Some(Cycle::new(path, neighbor));
+                        return Some(Cycle::new(path, neighbor.clone()));
                     }
                 }
                 NodeColor::Black => {
@@ -210,23 +201,20 @@ impl<'a> CycleDetector<'a> {
         self.colors.insert(current.clone(), NodeColor::Gray);
         self.call_stack.push(current.clone());
 
-        let mut neighbors: Vec<NodeId> = self.graph.children_of(current).to_vec();
-        neighbors.sort();
-
-        for neighbor in neighbors {
-            if !self.graph.has_node(&neighbor) {
+        for neighbor in self.graph.children_of(current) {
+            if !self.graph.has_node(neighbor) {
                 continue;
             }
 
-            match self.get_color(&neighbor) {
+            match self.get_color(neighbor) {
                 NodeColor::White => {
-                    self.dfs_collect_all(&neighbor);
+                    self.dfs_collect_all(neighbor);
                 }
                 NodeColor::Gray => {
                     // Back-edge detected! Reconstruct cycle without recursing on neighbor
-                    if let Some(pos) = self.call_stack.iter().position(|id| id == &neighbor) {
+                    if let Some(pos) = self.call_stack.iter().position(|id| id == neighbor) {
                         let path = self.call_stack[pos..].to_vec();
-                        let cycle = Cycle::new(path, neighbor);
+                        let cycle = Cycle::new(path, neighbor.clone());
                         self.cycles.push(cycle);
                     }
                 }

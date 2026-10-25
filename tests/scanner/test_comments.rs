@@ -304,3 +304,35 @@ fn test_regression_scanner_mixed_polyglot_file_end_to_end() {
     assert_eq!(links[2].target_id().as_str(), "REQ-REAL-03");
     assert_eq!(links[2].line, 7);
 }
+
+/// Verifies single-pass binary sniffing and multi-block file ingestion in `scan_comments_file`
+/// for files larger than the 512-byte initial sniff window.
+///
+/// // @trace SPEC-SCAN-COMMENTS, SPEC-PERF-BOUNDS, REQ-NFR-PERF, REQ-CODE-SCAN
+#[test]
+fn test_single_pass_large_file_and_binary_sniffing() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // 1. Large text file (> 512 bytes) with trace marker past the 512-byte boundary
+    let large_src = root.join("src").join("large.rs");
+    std::fs::create_dir_all(large_src.parent().expect("parent")).expect("mkdir");
+    let mut f = File::create(&large_src).expect("create large.rs");
+    for _ in 1..=30 {
+        writeln!(f, "// padding comment line with no trace marker here").expect("write");
+    }
+    writeln!(f, "{}", fixture("// @@trace REQ-LARGE-31")).expect("write");
+    let links = scan_comments_file(&large_src, Some(root), None).expect("scan large");
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].target_id().as_str(), "REQ-LARGE-31");
+    assert_eq!(links[0].line, 31);
+
+    // 2. Binary file containing NUL byte in the initial 512-byte header is skipped in single pass
+    let bin_file = root.join("src").join("blob.bin");
+    let mut bf = File::create(&bin_file).expect("create blob.bin");
+    bf.write_all(b"ELF\x00binary header ").expect("write bin");
+    bf.write_all(fixture("// @@trace REQ-NEVER-01\n").as_bytes())
+        .expect("write bin trace");
+    let bin_links = scan_comments_file(&bin_file, Some(root), None).expect("scan bin");
+    assert!(bin_links.is_empty());
+}

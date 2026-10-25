@@ -1,7 +1,8 @@
 //! Subcommand handler for `xtrc tree` visualizing traceability hierarchy trees.
 //!
-//! // @trace SPEC-CLI-TREE, REQ-CMD-TREE, REQ-EXIT-CODES, REQ-UNIX-STREAMS
+//! // @trace SPEC-CLI-TREE, SPEC-PERF-BOUNDS, REQ-NFR-PERF, REQ-CMD-TREE, REQ-EXIT-CODES, REQ-UNIX-STREAMS
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -142,11 +143,12 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
         );
         envelope.print_stdout()?;
     } else {
+        let mut output_buf = String::with_capacity(4096);
         for (i, root) in starting_nodes.iter().enumerate() {
             if i > 0 {
-                println!();
+                output_buf.push('\n');
             }
-            println!("{}: {} ({})", root.id, root.title, root.layer);
+            let _ = writeln!(output_buf, "{}: {} ({})", root.id, root.title, root.layer);
             if options.depth != Some(0) {
                 let mut walker = TreeWalker {
                     graph: &graph,
@@ -154,11 +156,13 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
                     max_depth: options.depth,
                     path_stack: vec![root.id.clone()],
                     cycle_detected: false,
+                    out: &mut output_buf,
                 };
                 walker.render_branches(root, 1, "");
                 cycle_detected |= walker.cycle_detected;
             }
         }
+        print!("{output_buf}");
     }
 
     // 3. Cycle defect checking
@@ -184,16 +188,17 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
 }
 
 /// Recursion state for rendering a text tree: fixed traversal settings plus the
-/// active ancestor path (for cycle detection) and whether a cycle was seen.
-struct TreeWalker<'g> {
+/// active ancestor path (for cycle detection), whether a cycle was seen, and a shared output buffer.
+struct TreeWalker<'g, 'b> {
     graph: &'g TraceabilityGraph,
     reverse: bool,
     max_depth: Option<usize>,
     path_stack: Vec<NodeId>,
     cycle_detected: bool,
+    out: &'b mut String,
 }
 
-impl TreeWalker<'_> {
+impl TreeWalker<'_, '_> {
     fn render_branches(&mut self, current: &TraceNode, current_depth: usize, prefix: &str) {
         let graph = self.graph;
         let reverse = self.reverse;
@@ -222,7 +227,8 @@ impl TreeWalker<'_> {
                     let mut chain: Vec<String> =
                         self.path_stack.iter().map(|id| id.to_string()).collect();
                     chain.push(parent_id.to_string());
-                    println!(
+                    let _ = writeln!(
+                        self.out,
                         "{prefix}{branch}{parent_id} (cycle: {})",
                         chain.join(" -> ")
                     );
@@ -230,7 +236,8 @@ impl TreeWalker<'_> {
                 }
 
                 if let Some(parent_node) = graph.get_node(parent_id) {
-                    println!(
+                    let _ = writeln!(
+                        self.out,
                         "{prefix}{branch}{}: {} ({})",
                         parent_node.id, parent_node.title, parent_node.layer
                     );
@@ -238,7 +245,7 @@ impl TreeWalker<'_> {
                     self.render_branches(parent_node, current_depth + 1, &next_prefix);
                     self.path_stack.pop();
                 } else {
-                    println!("{prefix}{branch}{parent_id} [missing]");
+                    let _ = writeln!(self.out, "{prefix}{branch}{parent_id} [missing]");
                 }
             }
         } else {
@@ -266,12 +273,17 @@ impl TreeWalker<'_> {
                     let mut chain: Vec<String> =
                         self.path_stack.iter().map(|id| id.to_string()).collect();
                     chain.push(child_id.to_string());
-                    println!("{prefix}{branch}{child_id} (cycle: {})", chain.join(" -> "));
+                    let _ = writeln!(
+                        self.out,
+                        "{prefix}{branch}{child_id} (cycle: {})",
+                        chain.join(" -> ")
+                    );
                     continue;
                 }
 
                 if let Some(child_node) = graph.get_node(child_id) {
-                    println!(
+                    let _ = writeln!(
+                        self.out,
                         "{prefix}{branch}{}: {} ({})",
                         child_node.id, child_node.title, child_node.layer
                     );
@@ -279,7 +291,7 @@ impl TreeWalker<'_> {
                     self.render_branches(child_node, current_depth + 1, &next_prefix);
                     self.path_stack.pop();
                 } else {
-                    println!("{prefix}{branch}{child_id} [missing]");
+                    let _ = writeln!(self.out, "{prefix}{branch}{child_id} [missing]");
                 }
             }
 
@@ -288,7 +300,8 @@ impl TreeWalker<'_> {
                 item_idx += 1;
                 let is_last = item_idx == total_items;
                 let branch = if is_last { "└── " } else { "├── " };
-                println!(
+                let _ = writeln!(
+                    self.out,
                     "{prefix}{branch}[code] {}:{}",
                     link.source_file.display(),
                     link.line
@@ -300,7 +313,8 @@ impl TreeWalker<'_> {
                 item_idx += 1;
                 let is_last = item_idx == total_items;
                 let branch = if is_last { "└── " } else { "├── " };
-                println!(
+                let _ = writeln!(
+                    self.out,
                     "{prefix}{branch}[test] {}:{}",
                     link.source_file.display(),
                     link.line

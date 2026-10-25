@@ -6,8 +6,8 @@ pub mod comments;
 pub mod traversal;
 
 pub use comments::{
-    classify_link_kind, clean_id_token, is_test_file_path, scan_comment_line, scan_comments_file,
-    scan_comments_text, scan_workspace_comments,
+    classify_link_kind, clean_id_token, contains_trace_marker_bytes, is_test_file_path,
+    scan_comment_line, scan_comments_file, scan_comments_text, scan_workspace_comments,
 };
 pub use traversal::{
     build_glob_set, categorize_files, create_walk_builder, glob_match, is_binary_buffer,
