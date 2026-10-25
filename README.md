@@ -184,12 +184,20 @@ Every delivery includes a deterministic **SPDX 2.3 JSON SBOM** (`xtrc.spdx.json`
 - Attached as a standalone asset on the [`main-head` GitHub Release](https://github.com/sor4c/xtrc/releases/tag/main-head) alongside `SHA256SUMS`.
 - Regenerated locally at any time via `./scripts/generate-sbom.sh dist/xtrc.spdx.json`.
 
+### Non-Functional Requirements (NFRs) & Continuous Performance Gates
+`xtrc` enforces strict quantitative Non-Functional Requirements across every commit, pull request, and release via [`tests/perf/test_benchmarks.rs`](tests/perf/test_benchmarks.rs) and [`scripts/measure-perf.sh`](scripts/measure-perf.sh):
+- **Sub-Second Latency (`REQ-NFR-PERF`)**: Full 1,000-file polyglot repository verification completes in `< 500ms`; self-repository CLI operations (`check --strict`, `matrix`, `tree`, `export`) complete in `< 200ms`.
+- **Bounded Memory & Binary Sniffing (`REQ-NFR-MEM`)**: Binary assets are skipped via a 512-byte header probe in `< 25ms` without full-file buffering; 1,000-file workspace graph metadata memory remains `< 50 MiB`.
+- **Linear $O(V + E)$ Scalability (`REQ-NFR-SCALE`)**: Multi-thousand-node DAG validation and cycle detection execute in linear $O(V + E)$ time (`< 100ms`), and literal `@trace` pre-filtering scans 1 MiB of non-matching source text in `< 50ms`.
+- **Deterministic Multi-Core Output (`REQ-NFR-DETERM`)**: Parallel work-stealing traversal and scanning emit byte-for-byte identical outputs across runs.
+- **CI/CD SLA Enforcement (`REQ-CI-PERF`)**: Both [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and [`.github/workflows/delivery.yml`](.github/workflows/delivery.yml) run `bash scripts/measure-perf.sh dist/perf-report.json`, publish `perf-report.json` and a Markdown latency summary, and fail the pipeline if any NFR threshold is breached.
+
 ### Build and Test Commands
 ```bash
 # Build the project
 cargo build
 
-# Run unit and integration tests
+# Run unit, integration, and NFR benchmark tests
 cargo test
 
 # Check code formatting
@@ -197,6 +205,9 @@ cargo fmt --check
 
 # Run linter checks
 cargo clippy --all-targets --all-features -- -D warnings
+
+# Run release-binary NFR performance measurement & SLA gate
+bash scripts/measure-perf.sh dist/perf-report.json
 ```
 
 ### Contributing & Governance
@@ -204,6 +215,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 - **Issue-Driven Development**: All work begins with a documented issue.
 - **Requirements Before Design**: Clarify behavioral requirements before designing solutions.
 - **Intent Over Implementation**: Focus on verifiable outcomes rather than prescriptive mechanics.
+- **Branch-First & Pull Request Workflow**: Never push directly to `main`; always work on a dedicated branch (`feat/<issue>-*`, `fix/<issue>-*`, etc.) and submit changes via Pull Requests.
 
 For full guidelines on contributing, code standards, and PR workflows, please review [CONTRIBUTING.md](CONTRIBUTING.md).
 

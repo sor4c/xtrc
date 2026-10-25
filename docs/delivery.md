@@ -73,7 +73,7 @@ schema_version: "1.0.0"
 
 ### SPEC-CI-VERIFY: GitHub Actions Continuous Verification Pipeline Contract
 - **ID**: SPEC-CI-VERIFY
-- **Parent**: REQ-CI-VERIFY, US-CICD-01
+- **Parent**: REQ-CI-VERIFY, REQ-CI-PERF, US-CICD-01
 - **Type**: TechnicalSpec
 - **Component Target**: .github/workflows/ci.yml
 - **Verification Target**: tests/e2e/tier4_real_world.rs
@@ -84,27 +84,29 @@ schema_version: "1.0.0"
     1. Checkout repository and provision stable Rust toolchain with `rustfmt` and `clippy`.
     2. Formatting gate: `cargo fmt --check`.
     3. Linter gate: `cargo clippy --all-targets --all-features -- -D warnings`.
-    4. Automated test suite: `cargo test --all-targets --all-features`.
-    5. Self-traceability gate: `cargo run -- check --strict`.
+    4. Automated test & NFR benchmark suite: `cargo test --all-targets --all-features`.
+    5. Self-traceability gate: `cargo run --locked -- check --strict`.
+    6. Release-binary performance measurement & NFR SLA gate: `bash scripts/measure-perf.sh dist/perf-report.json`.
 
 ### SPEC-CD-DELIVERY: GitHub Actions Head-of-Main Packaging and SPDX SBOM Delivery Contract
 - **ID**: SPEC-CD-DELIVERY
-- **Parent**: REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, REQ-VER-POLICY, US-CICD-01
+- **Parent**: REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, REQ-VER-POLICY, REQ-CI-PERF, US-CICD-01
 - **Type**: TechnicalSpec
 - **Component Target**: .github/workflows/delivery.yml, scripts/generate-sbom.sh, scripts/generate-homebrew-formula.sh, Cargo.toml
 - **Verification Target**: tests/e2e/tier4_real_world.rs
 - **Technical Specification**:
   - Workflow Path: `.github/workflows/delivery.yml`.
   - Triggers: `push` to `main` branch and `workflow_dispatch`.
-  - Job 1 (`verify`): Runs all mandatory quality gates (`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, `cargo run -- check --strict`).
+  - Job 1 (`verify`): Runs all mandatory quality and performance gates (`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, `cargo run --locked -- check --strict`, `bash scripts/measure-perf.sh dist/perf-report.json`).
   - Job 2 (`deliver`, requires `verify`):
     1. Checks out full Git history (`fetch-depth: 0`) and computes unique version `VERSION="$(bash scripts/compute-version.sh)"`.
     2. Compiles optimized release binary (`XTRC_DELIVERY_VERSION="${VERSION}" cargo build --release --locked`) and verifies `./target/release/xtrc --version`.
-    3. Generates SPDX 2.3 JSON SBOM (`dist/xtrc.spdx.json`) stamped with `${VERSION}` via `scripts/generate-sbom.sh`.
-    4. Builds Debian package (`dist/xtrc_${VERSION}_amd64.deb`) via `cargo deb --no-build --deb-version "${VERSION}"` (embedding `/usr/share/doc/xtrc/xtrc.spdx.json`).
-    5. Packages release tarball (`dist/xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz`) containing `xtrc`, `README.md`, `LICENSE`, and `xtrc.spdx.json`.
-    6. Generates Homebrew package formula (`dist/xtrc.rb`) via `scripts/generate-homebrew-formula.sh` pinned to release tag `v${VERSION}`, plus `dist/SHA256SUMS`.
-    7. Uploads `dist/*` as GitHub Actions workflow artifacts, creates an immutable `v${VERSION}` GitHub Release, and refreshes the rolling `main-head` release pointer.
+    3. Measures release-binary performance and verifies NFR SLA fulfillment via `bash scripts/measure-perf.sh dist/perf-report.json ./target/release/xtrc`.
+    4. Generates SPDX 2.3 JSON SBOM (`dist/xtrc.spdx.json`) stamped with `${VERSION}` via `scripts/generate-sbom.sh`.
+    5. Builds Debian package (`dist/xtrc_${VERSION}_amd64.deb`) via `cargo deb --no-build --deb-version "${VERSION}"` (embedding `/usr/share/doc/xtrc/xtrc.spdx.json`).
+    6. Packages release tarball (`dist/xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz`) containing `xtrc`, `README.md`, `LICENSE`, and `xtrc.spdx.json`.
+    7. Generates Homebrew package formula (`dist/xtrc.rb`) via `scripts/generate-homebrew-formula.sh` pinned to release tag `v${VERSION}`, plus `dist/SHA256SUMS`.
+    8. Uploads `dist/*` (including `dist/perf-report.json`) as GitHub Actions workflow artifacts, creates an immutable `v${VERSION}` GitHub Release, and refreshes the rolling `main-head` release pointer.
 
 ### SPEC-VER-POLICY: Deterministic Git-Derived Version Policy Contract
 - **ID**: SPEC-VER-POLICY

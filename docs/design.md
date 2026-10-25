@@ -431,18 +431,19 @@ The system is organized into decoupled modules with strict boundaries:
 
 ### SPEC-PERF-BOUNDS: High-Performance Multi-Core Execution & Memory Budget
 - **ID**: SPEC-PERF-BOUNDS
-- **Parent Requirements**: REQ-NFR-PERF, US-UNIX-01
-- **Component Target**: src/lib.rs, src/cli/pipeline.rs, src/scanner/comments.rs, src/parser/document.rs, src/graph/validator.rs
+- **Parent Requirements**: REQ-NFR-PERF, REQ-NFR-MEM, REQ-NFR-SCALE, REQ-NFR-DETERM, US-PERF-01, US-UNIX-01
+- **Component Target**: src/lib.rs, src/cli/pipeline.rs, src/scanner/comments.rs, src/scanner/traversal.rs, src/parser/document.rs, src/graph/validator.rs, src/graph/cycle.rs
 - **Verification Target**: tests/perf/test_benchmarks.rs, tests/scanner/test_comments.rs
 - **Technical Specification**:
   - Parallel Traversal & Single-Pass Partitioning: Leverages `ignore::WalkParallel` and `rayon` work-stealing thread pools to pipeline directory discovery, single-pass `O(N)` file categorization (including `other` text files without $O(N^2)$ linear slice searches), parallel specification parsing, and parallel comment scanning.
   - Literal Pre-Filtered Scanning & Single-Pass File Inspection: Performs binary NUL-byte sniffing on the initial read buffer and applies fast `@trace` literal pre-filtering with lazy line-number resolution (`nlscan`) so files without annotations incur zero regex engine or line-splitting overhead.
   - Zero-Copy Frontmatter Slicing & Linear-Time Graph Validation: Slices YAML frontmatter directly without whole-file `Vec<&str>` line tables, computes upward `Vision` reachability in a single $O(V + E)$ pass from root nodes, traverses pre-sorted cycle adjacency slices without per-visit cloning, and batches CLI output over locked `BufWriter` streams.
-  - Memory Footprint Bounding: Uses bounded streaming buffers for binary file sniffing (<512 bytes read per asset); overall memory usage is bounded by repository metadata size (<50MB for 10,000 files).
-  - Sub-Second Target: Full repository traversal, graph parsing, cycle detection, and verification completes in <500ms for repositories under 10,000 files.
+  - Memory Footprint Bounding: Uses bounded streaming buffers for binary file sniffing (<=512 bytes read per binary asset); overall memory usage is bounded by repository metadata size (<50 MiB for 1,000 files).
+  - Canonical Deterministic Ordering: Maintains `BTreeMap` / `BTreeSet` and sorted adjacency vectors across parallel worker reductions so all CLI commands produce byte-for-byte identical outputs across runs.
+  - Sub-Second Target: Full repository traversal, graph parsing, cycle detection, and verification completes in <500ms for repositories with 1,000 files and <200ms on the `xtrc` repository itself.
 - **Validation & Behavioral Rules**:
   - Zero network round-trips or disk-bound temporary databases.
-  - Benchmark assertions verify performance budgets during automated testing.
+  - Benchmark assertions verify performance, memory, scalability, and determinism budgets during automated testing and CI/CD gates.
 
 ---
 
@@ -471,10 +472,13 @@ The system is organized into decoupled modules with strict boundaries:
 | `REQ-FMT-JSON` | Universal Machine-Readable JSON Output | `SPEC-CLI-OUTPUT` | `src/cli/output.rs` | `tests/cli/test_output.rs` |
 | `REQ-UNIX-STREAMS` | Standard Unix Streams Separation | `SPEC-CLI-VERIFY`, `SPEC-CLI-MATRIX`, `SPEC-CLI-TREE`, `SPEC-CLI-EXPORT`, `SPEC-CLI-OUTPUT` | `src/cli/*.rs` | `tests/cli/test_output.rs` |
 | `REQ-EXIT-CODES` | Deterministic Process Exit Codes | `SPEC-CLI-VERIFY`, `SPEC-CLI-OUTPUT`, `SPEC-ERR-HIERARCHY` | `src/cli/output.rs`, `src/error.rs` | `tests/cli/test_output.rs`, `tests/error/test_error.rs` |
-| `REQ-NFR-PERF` | Sub-Second Execution Performance | `SPEC-DISC-TRAVERSAL`, `SPEC-CLI-VERIFY`, `SPEC-PERF-BOUNDS` | `src/scanner/traversal.rs`, `src/lib.rs` | `tests/perf/test_benchmarks.rs` |
+| `REQ-NFR-PERF` | Sub-Second Execution Performance | `SPEC-DISC-TRAVERSAL`, `SPEC-CLI-VERIFY`, `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/scanner/traversal.rs`, `src/cli/pipeline.rs`, `src/lib.rs` | `tests/perf/test_benchmarks.rs` |
+| `REQ-NFR-MEM` | Bounded Memory Footprint and Streaming Binary Sniffing | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/scanner/traversal.rs`, `src/scanner/comments.rs` | `tests/perf/test_benchmarks.rs` |
+| `REQ-NFR-SCALE` | Multi-Core Linear Scalability and O(V + E) Graph Complexity | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/cli/pipeline.rs`, `src/graph/validator.rs`, `src/graph/cycle.rs` | `tests/perf/test_benchmarks.rs` |
+| `REQ-NFR-DETERM` | Deterministic and Reproducible Multi-Core Output | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/cli/pipeline.rs`, `src/graph/model.rs`, `src/graph/validator.rs` | `tests/perf/test_benchmarks.rs` |
 | `REQ-NFR-ROBUST` | Robust Error Handling and Crash-Free Operation | `SPEC-ERR-HIERARCHY` | `src/error.rs` | `tests/error/test_error.rs` |
 
 ### 8.2 Backward Justification & Upward Linkage Summary
-- Total `SPEC-*` Nodes: 16.
-- Broken Parent Links: 0 (All upstream `REQ-*` and `US-*` references resolve directly to `docs/requirements.md`).
+- Total `SPEC-*` Nodes: 16 (plus derived NFR & CI/CD specifications in `docs/nfr.md` and `docs/delivery.md`).
+- Broken Parent Links: 0 (All upstream `REQ-*` and `US-*` references resolve directly to `docs/requirements.md` and `docs/nfr.md`).
 - Forward Target Declarations: 100% of `SPEC-*` nodes specify explicit `Component Target` (`src/`) and `Verification Target` (`tests/`), providing a complete design blueprint for subsequent implementation.

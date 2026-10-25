@@ -1,6 +1,6 @@
 //! In-memory 7-layer Directed Acyclic Graph (DAG) data structure and queries.
 //!
-//! // @trace SPEC-DAG-STORAGE, REQ-DAG-MODEL, REQ-NFR-ROBUST, REQ-EXIT-CODES
+//! // @trace SPEC-DAG-STORAGE, SPEC-PERF-BOUNDS, REQ-DAG-MODEL, REQ-NFR-DETERM, REQ-NFR-ROBUST, REQ-EXIT-CODES, US-PERF-01
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 

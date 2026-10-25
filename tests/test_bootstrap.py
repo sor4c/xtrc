@@ -488,6 +488,19 @@ class TestR4AgentInstructions(unittest.TestCase):
         self.assertTrue("requirements" in content)
         self.assertTrue("intent" in content)
 
+    def test_r4_06_branch_and_pull_request_mandate_in_guidelines(self):
+        """All governance guidelines prohibit direct pushes to main and require branches and Pull Requests."""
+        for path in [
+            REPO_ROOT / "CONTRIBUTING.md",
+            self.agents_md_path,
+            self.gemini_rules_path,
+            self.copilot_path,
+        ]:
+            content = path.read_text(encoding="utf-8").lower()
+            self.assertIn("branch", content, f"{path.name} must require working on a branch")
+            self.assertIn("pull request", content, f"{path.name} must require pull requests")
+            self.assertIn("main", content, f"{path.name} must forbid pushing directly to main")
+
 
 class TestRepositoryHygieneAndIntegration(unittest.TestCase):
     """Acceptance tests for cross-component integration and repository hygiene."""

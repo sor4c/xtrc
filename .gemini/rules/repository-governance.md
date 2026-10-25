@@ -31,11 +31,16 @@ All agents operating in this repository MUST strictly follow the **Three Core De
 - Avoid prescriptive or over-engineered implementations; prefer minimal, idiomatic Rust code.
 - Verify observable behavior and contracts rather than internal implementation details.
 
+### Branch-First & Pull Request Mandate (No Direct Pushes to `main`)
+- **Never push directly to `main`**: Direct commits or pushes to `main` (`git push origin main`) are strictly forbidden.
+- **Always work on a dedicated branch**: Create an issue-scoped branch (`feat/<issue-id>-<slug>`, `fix/<issue-id>-<slug>`, `chore/<issue-id>-<slug>`, `docs/<issue-id>-<slug>`) for all work.
+- **Always submit Pull Requests**: Push your branch and open a Pull Request targeting `main` referencing the originating issue (`Fixes #<id>` or `Relates to #<id>`).
+
 ---
 
 ## 3. Mandatory Quality Gates
 
-Before finalizing any task or reporting completion, agents MUST execute and verify that all quality gates pass:
+Before finalizing any task or opening a Pull Request, agents MUST execute and verify that all quality gates pass:
 
 1. **Formatting**:
    ```bash
@@ -45,9 +50,17 @@ Before finalizing any task or reporting completion, agents MUST execute and veri
    ```bash
    cargo clippy --all-targets --all-features -- -D warnings
    ```
-3. **Automated Tests**:
+3. **Automated Tests & NFR Benchmarks**:
    ```bash
    cargo test --all-targets --all-features
+   ```
+4. **Strict Bidirectional Traceability**:
+   ```bash
+   cargo run --locked -- check --strict
+   ```
+5. **Performance & NFR SLA Measurement**:
+   ```bash
+   bash scripts/measure-perf.sh
    ```
 
 ### Integrity Mandate & Zero Tolerance for Bypassing Checks

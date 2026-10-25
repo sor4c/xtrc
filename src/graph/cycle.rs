@@ -1,6 +1,6 @@
 //! 3-Color DFS cycle detection and circular dependency diagnostics.
 //!
-//! // @trace SPEC-DAG-CYCLE, SPEC-PERF-BOUNDS, REQ-NFR-PERF, REQ-CYCLE-DETECT, REQ-EXIT-CODES, US-CYCLE-01
+//! // @trace SPEC-DAG-CYCLE, SPEC-PERF-BOUNDS, REQ-NFR-PERF, REQ-NFR-SCALE, REQ-NFR-DETERM, REQ-CYCLE-DETECT, REQ-EXIT-CODES, US-CYCLE-01, US-PERF-01
 
 use std::collections::BTreeMap;
 use std::fmt;

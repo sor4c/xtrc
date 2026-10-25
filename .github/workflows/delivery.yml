@@ -1,4 +1,4 @@
-# @trace SPEC-CD-DELIVERY, SPEC-VER-POLICY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, REQ-VER-POLICY
+# @trace SPEC-CD-DELIVERY, SPEC-VER-POLICY, SPEC-CI-PERF, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, REQ-VER-POLICY, REQ-CI-PERF, REQ-NFR-PERF
 name: Head-of-Main Delivery
 
 on:
@@ -35,11 +35,14 @@ jobs:
       - name: Run strict linter diagnostics (cargo clippy)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Run automated test suite (cargo test)
+      - name: Run automated test and NFR benchmark suite (cargo test)
         run: cargo test --all-targets --all-features
 
       - name: Verify repository bidirectional traceability (xtrc check --strict)
         run: cargo run --locked -- check --strict
+
+      - name: Measure CLI performance and enforce NFR SLA budgets (scripts/measure-perf.sh)
+        run: bash scripts/measure-perf.sh dist/perf-report.json
 
   deliver:
     name: Build Package, SPDX SBOM & Publish Delivery
@@ -67,6 +70,11 @@ jobs:
           XTRC_DELIVERY_VERSION="${VERSION}" cargo build --release --locked
           ./target/release/xtrc --version | grep -F "xtrc ${VERSION}"
 
+      - name: Measure release binary performance and verify NFR SLA fulfillment
+        run: |
+          bash scripts/measure-perf.sh dist/perf-report.json ./target/release/xtrc
+          jq -e '.status == "pass" and (.benchmarks | length >= 5) and (.benchmarks | all(.passed == true))' dist/perf-report.json >/dev/null
+
       - name: Generate SPDX 2.3 JSON SBOM and package deliverables
         run: |
           VERSION="${XTRC_DELIVERY_VERSION}"
@@ -93,7 +101,7 @@ jobs:
           bash scripts/generate-homebrew-formula.sh "${VERSION}" "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "dist/xtrc.rb" "${GITHUB_REPOSITORY:-sor4c/xtrc}" "v${VERSION}"
 
           # 5. Generate SHA-256 checksums for all delivery artifacts
-          (cd dist && sha256sum xtrc.spdx.json xtrc.rb *.deb *.tar.gz > SHA256SUMS)
+          (cd dist && sha256sum xtrc.spdx.json perf-report.json xtrc.rb *.deb *.tar.gz > SHA256SUMS)
 
       - name: Upload head-of-main delivery artifacts
         uses: actions/upload-artifact@v4
@@ -101,6 +109,7 @@ jobs:
           name: xtrc-${{ env.XTRC_DELIVERY_VERSION }}-delivery
           path: |
             dist/xtrc.spdx.json
+            dist/perf-report.json
             dist/xtrc.rb
             dist/*.deb
             dist/*.tar.gz
@@ -115,14 +124,14 @@ jobs:
           VERSION="${XTRC_DELIVERY_VERSION}"
           VERSION_TAG="v${VERSION}"
           TITLE="xtrc ${VERSION}"
-          NOTES="Automated head-of-main delivery for version \`${VERSION}\` (commit \`${GITHUB_SHA}\`). Includes Homebrew formula (\`xtrc.rb\`), Debian package (\`xtrc_${VERSION}_amd64.deb\`), prebuilt Linux binary archive (\`xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\`), \`SHA256SUMS\`, and SPDX 2.3 JSON SBOM (\`xtrc.spdx.json\`)."
+          NOTES="Automated head-of-main delivery for version \`${VERSION}\` (commit \`${GITHUB_SHA}\`). Includes Homebrew formula (\`xtrc.rb\`), Debian package (\`xtrc_${VERSION}_amd64.deb\`), prebuilt Linux binary archive (\`xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\`), \`SHA256SUMS\`, CI/CD performance SLA report (\`perf-report.json\`), and SPDX 2.3 JSON SBOM (\`xtrc.spdx.json\`)."
 
           # 1. Create immutable versioned release v<VERSION> (never overwrite an existing version tag)
           if gh release view "${VERSION_TAG}" >/dev/null 2>&1; then
             echo "Error: Release '${VERSION_TAG}' already exists. Refusing to overwrite an immutable versioned delivery." >&2
             exit 1
           fi
-          gh release create "${VERSION_TAG}" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+          gh release create "${VERSION_TAG}" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
             --title "${TITLE}" \
             --notes "${NOTES}" \
             --target "${GITHUB_SHA}" \
@@ -132,7 +141,7 @@ jobs:
           if gh release view "main-head" >/dev/null 2>&1; then
             gh release delete "main-head" --yes --cleanup-tag
           fi
-          gh release create "main-head" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+          gh release create "main-head" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
             --title "xtrc Head-of-Main (${VERSION})" \
             --notes "${NOTES}" \
             --target "${GITHUB_SHA}" \

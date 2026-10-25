@@ -1,4 +1,4 @@
-# @trace SPEC-CI-VERIFY, REQ-CI-VERIFY
+# @trace SPEC-CI-VERIFY, SPEC-CI-PERF, REQ-CI-VERIFY, REQ-CI-PERF, REQ-NFR-PERF, US-CICD-01, US-PERF-01
 name: Verify
 
 on:
@@ -36,9 +36,19 @@ jobs:
       - name: Run strict linter diagnostics (cargo clippy)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Run automated test suite (cargo test)
+      - name: Run automated test and NFR benchmark suite (cargo test)
         run: cargo test --all-targets --all-features
 
       - name: Verify repository bidirectional traceability (xtrc check --strict)
         run: cargo run --locked -- check --strict
+
+      - name: Measure CLI performance and enforce NFR SLA budgets (scripts/measure-perf.sh)
+        run: bash scripts/measure-perf.sh dist/perf-report.json
+
+      - name: Upload CI performance measurement report
+        uses: actions/upload-artifact@v4
+        with:
+          name: xtrc-ci-perf-report
+          path: dist/perf-report.json
+          if-no-files-found: error
 

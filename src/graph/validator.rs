@@ -1,8 +1,8 @@
 //! 4-Stage Bidirectional Validator Engine verifying referential integrity,
 //! root justification, forward coverage, and backward provenance to Vision.
 //!
-//! // @trace SPEC-DAG-VALIDATE, SPEC-PERF-BOUNDS, REQ-NFR-PERF, REQ-BROKEN-LINK, REQ-FORWARD-COV, REQ-BACKWARD-JUST
-//! // @trace REQ-ORPHAN-DETECT, REQ-STRICT-GATE, REQ-EXIT-CODES, US-VERIFY-01, US-ORPHAN-01, US-GATE-01
+//! // @trace SPEC-DAG-VALIDATE, SPEC-PERF-BOUNDS, SPEC-PERF-HARNESS, REQ-NFR-PERF, REQ-NFR-SCALE, REQ-NFR-DETERM, REQ-BROKEN-LINK, REQ-FORWARD-COV, REQ-BACKWARD-JUST
+//! // @trace REQ-ORPHAN-DETECT, REQ-STRICT-GATE, REQ-EXIT-CODES, US-VERIFY-01, US-ORPHAN-01, US-GATE-01, US-PERF-01
 
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt;

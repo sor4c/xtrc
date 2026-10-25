@@ -759,3 +759,74 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
     assert!(formula_raw.contains("doc.install \"README.md\", \"xtrc.spdx.json\""));
     assert!(formula_raw.contains(&format!("version \"{v2}\"")));
 }
+
+// ==============================================================================
+// Real-World Workload 12: CI/CD Performance Measurement & NFR SLA Gate
+// ==============================================================================
+
+// @trace:test SPEC-CI-PERF, SPEC-PERF-HARNESS, SPEC-PERF-BOUNDS, REQ-CI-PERF, REQ-NFR-PERF, REQ-NFR-MEM, REQ-NFR-SCALE, REQ-NFR-DETERM, US-PERF-01, US-CICD-01
+#[test]
+fn test_t4_rw12_ci_cd_performance_measurement_and_nfr_sla_gate() {
+    let ci_raw = std::fs::read_to_string(".github/workflows/ci.yml")
+        .expect(".github/workflows/ci.yml must exist");
+    assert!(
+        ci_raw.contains("scripts/measure-perf.sh") && ci_raw.contains("perf-report.json"),
+        "ci.yml must execute scripts/measure-perf.sh and emit perf-report.json"
+    );
+
+    let delivery_raw = std::fs::read_to_string(".github/workflows/delivery.yml")
+        .expect(".github/workflows/delivery.yml must exist");
+    assert!(
+        delivery_raw.contains("scripts/measure-perf.sh")
+            && delivery_raw.contains("perf-report.json"),
+        "delivery.yml must execute scripts/measure-perf.sh and publish perf-report.json"
+    );
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir for perf report test");
+    let perf_json_path = tmp_dir.path().join("perf-report.json");
+    let step_summary_path = tmp_dir.path().join("step_summary.md");
+    let bin_path = assert_cmd::cargo::cargo_bin!("xtrc");
+
+    let status = std::process::Command::new("bash")
+        .arg("scripts/measure-perf.sh")
+        .arg(&perf_json_path)
+        .arg(bin_path)
+        .env("GITHUB_STEP_SUMMARY", &step_summary_path)
+        .status()
+        .expect("execute scripts/measure-perf.sh");
+    assert!(
+        status.success(),
+        "scripts/measure-perf.sh must succeed and fulfill all NFR SLA budgets"
+    );
+
+    let perf_raw = std::fs::read_to_string(&perf_json_path).expect("read perf-report.json");
+    let perf_json: serde_json::Value =
+        serde_json::from_str(&perf_raw).expect("perf-report.json must be valid JSON");
+    assert_eq!(
+        perf_json.get("status").and_then(|v| v.as_str()),
+        Some("pass"),
+        "Performance report status must be 'pass'"
+    );
+
+    let benchmarks = perf_json
+        .get("benchmarks")
+        .and_then(|b| b.as_array())
+        .expect("perf-report.json must contain benchmarks array");
+    assert_eq!(
+        benchmarks.len(),
+        5,
+        "perf-report.json must measure all 5 SLA workloads"
+    );
+    for b in benchmarks {
+        assert_eq!(
+            b.get("passed").and_then(|v| v.as_bool()),
+            Some(true),
+            "Workload {:?} must pass its SLA budget",
+            b
+        );
+    }
+
+    let summary_md = std::fs::read_to_string(&step_summary_path).expect("read step summary");
+    assert!(summary_md.contains("synthetic_1000_files_check_strict"));
+    assert!(summary_md.contains("**PASS**"));
+}
