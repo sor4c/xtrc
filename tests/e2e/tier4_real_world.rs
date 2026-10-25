@@ -618,8 +618,11 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
         "delivery.yml must generate an SPDX JSON SBOM"
     );
     assert!(
-        delivery_raw.contains("cargo deb") && delivery_raw.contains(".tar.gz"),
-        "delivery.yml must build .deb and .tar.gz installable packages"
+        delivery_raw.contains("cargo deb")
+            && delivery_raw.contains(".tar.gz")
+            && delivery_raw.contains("scripts/generate-homebrew-formula.sh")
+            && delivery_raw.contains("xtrc.rb"),
+        "delivery.yml must build .deb, .tar.gz, and Homebrew formula (xtrc.rb) installable packages"
     );
 
     // (3) Execute scripts/generate-sbom.sh and validate the generated SPDX 2.3 JSON SBOM
@@ -661,4 +664,27 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
         !relationships.is_empty(),
         "SPDX relationships must not be empty"
     );
+
+    // (1) Execute scripts/generate-homebrew-formula.sh and validate the generated Homebrew formula (xtrc.rb)
+    let dummy_tarball = tmp_dir
+        .path()
+        .join("xtrc-v0.1.0-x86_64-unknown-linux-gnu.tar.gz");
+    std::fs::write(&dummy_tarball, b"dummy-tarball-bytes").expect("write dummy tarball");
+    let formula_path = tmp_dir.path().join("xtrc.rb");
+    let brew_status = std::process::Command::new("bash")
+        .arg("scripts/generate-homebrew-formula.sh")
+        .arg("0.1.0")
+        .arg(&dummy_tarball)
+        .arg(&formula_path)
+        .status()
+        .expect("execute scripts/generate-homebrew-formula.sh");
+    assert!(
+        brew_status.success(),
+        "Homebrew formula generator script must succeed"
+    );
+    let formula_raw = std::fs::read_to_string(&formula_path).expect("read generated xtrc.rb");
+    assert!(formula_raw.contains("class Xtrc < Formula"));
+    assert!(formula_raw.contains("bin.install \"xtrc\""));
+    assert!(formula_raw.contains("doc.install \"README.md\", \"xtrc.spdx.json\""));
+    assert!(formula_raw.contains("version \"0.1.0\""));
 }
