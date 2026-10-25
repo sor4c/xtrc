@@ -1,6 +1,6 @@
 //! Polyglot comment regex scanner extracting `@trace` annotations across programming languages.
 //!
-//! // @trace SPEC-SCAN-COMMENTS, SPEC-PERF-BOUNDS, REQ-CODE-SCAN, REQ-TEST-SCAN, REQ-NFR-PERF, US-CODE-01, US-TEST-01
+//! // @trace SPEC-SCAN-COMMENTS, SPEC-PERF-BOUNDS, SPEC-PERF-HARNESS, REQ-CODE-SCAN, REQ-TEST-SCAN, REQ-NFR-PERF, REQ-NFR-MEM, REQ-NFR-SCALE, REQ-NFR-DETERM, US-CODE-01, US-TEST-01, US-PERF-01
 
 use std::fs::File;
 use std::io::Read;

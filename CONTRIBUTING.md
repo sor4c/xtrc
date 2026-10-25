@@ -66,7 +66,8 @@ The path from an idea to merged code follows a transparent, six-stage lifecycle:
 - Collaborate on the issue thread to ensure high-level functional requirements and acceptance criteria are unambiguous.
 - Define what constitutes success (e.g., specific CLI exit codes, output formats, test scenarios).
 
-### 3. Branching Strategy
+### 3. Branching Strategy (No Direct Pushes to `main`)
+- **Never push directly to `main`**: Direct pushes to the `main` branch are strictly prohibited. All work must happen on a dedicated branch and be submitted via a Pull Request.
 - Create a new branch off the latest `main` branch.
 - Use structured branch naming conventions:
   - `feat/<issue-id>-<short-description>` (e.g., `feat/42-graph-query`)
@@ -83,7 +84,7 @@ The path from an idea to merged code follows a transparent, six-stage lifecycle:
   - Install required components: `rustup component add rustfmt clippy rust-analyzer`.
 
 ### 5. Local Verification & Quality Gates
-Before committing or submitting a PR, you MUST run and pass all local verification checks:
+Before committing or submitting a PR, you MUST run and pass all local verification and performance gates:
 ```bash
 # 1. Format check
 cargo fmt --check
@@ -91,12 +92,18 @@ cargo fmt --check
 # 2. Strict linter check (zero warnings permitted)
 cargo clippy --all-targets --all-features -- -D warnings
 
-# 3. Test suite
+# 3. Test and NFR benchmark suite
 cargo test --all-targets --all-features
+
+# 4. Strict bidirectional traceability verification
+cargo run --locked -- check --strict
+
+# 5. Performance & NFR SLA measurement gate
+bash scripts/measure-perf.sh
 ```
 
 ### 6. Pull Request Submission
-- Create a pull request targeting `main`.
+- Always submit changes via a Pull Request targeting `main` (never push directly to `main`).
 - Fill out the PR description:
   - Reference the originating issue (e.g., `Closes #42`).
   - Summarize the intent of the change and how requirements are fulfilled.

@@ -1,6 +1,6 @@
 //! Ignore-aware filesystem traversal and streaming binary asset detection.
 //!
-//! // @trace SPEC-DISC-TRAVERSAL, SPEC-PERF-BOUNDS, REQ-IGNORE-RULES, REQ-NFR-PERF
+//! // @trace SPEC-DISC-TRAVERSAL, SPEC-PERF-BOUNDS, SPEC-PERF-HARNESS, REQ-IGNORE-RULES, REQ-NFR-PERF, REQ-NFR-MEM, REQ-NFR-SCALE, US-PERF-01
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
 use ignore::overrides::OverrideBuilder;

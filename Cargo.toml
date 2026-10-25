@@ -85,6 +85,10 @@ name = "test_graph"
 path = "tests/graph/mod.rs"
 
 [[test]]
+name = "test_benchmarks"
+path = "tests/perf/test_benchmarks.rs"
+
+[[test]]
 name = "e2e"
 path = "tests/e2e/main.rs"
 

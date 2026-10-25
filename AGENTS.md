@@ -34,11 +34,16 @@ All autonomous agents MUST adhere strictly to the **Three Core Development Rules
 - Choose clean, idiomatic, and minimal Rust solutions that directly satisfy the stated intent without introducing unnecessary abstraction layers.
 - Write tests that verify observable behavioral outcomes, not private internal implementation details.
 
+### Branch-First & Pull Request Mandate (No Direct Pushes to `main`)
+- **Never push directly to `main`**: Committing or pushing directly to the `main` branch (`git push origin main`) is strictly prohibited.
+- **Always work on a dedicated branch**: Every task, feature, bug fix, or documentation update must be developed on an isolated branch named `<type>/<issue-id>-<short-description>` (e.g., `feat/15-nfr-ci-perf-gate`, `fix/20-parser-edge-case`).
+- **Always use Pull Requests**: Push your feature/task branch to the remote repository and open a GitHub Pull Request targeting `main` that links to the originating issue and passes all CI/CD verification and performance gates.
+
 ---
 
 ## 3. Mandatory Quality Gates & Verification
 
-Before reporting completion or submitting changes, agents MUST execute and verify that all of the following quality gates pass with exit code `0`:
+Before reporting completion or submitting a Pull Request, agents MUST execute and verify that all of the following quality gates pass with exit code `0`:
 
 1. **Formatting**:
    ```bash
@@ -48,9 +53,17 @@ Before reporting completion or submitting changes, agents MUST execute and verif
    ```bash
    cargo clippy --all-targets --all-features -- -D warnings
    ```
-3. **Automated Test Suite**:
+3. **Automated Test & NFR Benchmark Suite**:
    ```bash
    cargo test --all-targets --all-features
+   ```
+4. **Strict Bidirectional Traceability**:
+   ```bash
+   cargo run --locked -- check --strict
+   ```
+5. **Performance & NFR SLA Measurement**:
+   ```bash
+   bash scripts/measure-perf.sh
    ```
 
 ### Strict Integrity Mandate (Zero Tolerance for Bypassing Checks)

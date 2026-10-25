@@ -35,6 +35,11 @@ When assisting developers in this repository, GitHub Copilot MUST respect and en
 - **Preserve simplicity**: Do not introduce unnecessary abstraction layers, convoluted inheritance hierarchies, or excessive generic boilerplate when simple, idiomatic Rust achieves the intent.
 - **Behavioral testing**: Propose tests that verify observable behavior and requirement contracts, not private internal implementation details.
 
+### Branch-First & Pull Request Workflow (No Direct Pushes to `main`)
+- **Never push directly to `main`**: Never commit or push directly to the `main` branch.
+- **Always work on a branch**: Develop every change on a dedicated issue branch (`feat/<issue-id>-<slug>`, `fix/<issue-id>-<slug>`, `chore/<issue-id>-<slug>`, `docs/<issue-id>-<slug>`).
+- **Always open Pull Requests**: Submit all changes via a GitHub Pull Request targeting `main` and ensure all CI verification, traceability, and NFR performance gates pass.
+
 ---
 
 ## 3. Rust Standards & Idiomatic Conventions
