@@ -255,6 +255,49 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
             let table = render_aligned_table(&headers, &row_cells);
             write_buffered_stdout(&table)?;
         }
+        MatrixFormat::Html => {
+            let row_cells: Vec<Vec<String>> = rows
+                .iter()
+                .map(|r| {
+                    vec![
+                        r.id.clone(),
+                        r.title.clone(),
+                        if r.parents.is_empty() {
+                            "-".to_string()
+                        } else {
+                            r.parents.join(", ")
+                        },
+                        if r.specs.is_empty() {
+                            "-".to_string()
+                        } else {
+                            r.specs.join(", ")
+                        },
+                        r.code_links_count.to_string(),
+                        r.test_links_count.to_string(),
+                        r.status.clone(),
+                    ]
+                })
+                .collect();
+            let mut html = String::from("<table><thead><tr>");
+            for h in &headers {
+                html.push_str(&format!("<th>{h}</th>"));
+            }
+            html.push_str("</tr></thead><tbody>");
+            for row in &row_cells {
+                html.push_str("<tr>");
+                for cell in row {
+                    html.push_str(&format!(
+                        "<td>{}</td>",
+                        cell.replace('&', "&amp;")
+                            .replace('<', "&lt;")
+                            .replace('>', "&gt;")
+                    ));
+                }
+                html.push_str("</tr>");
+            }
+            html.push_str("</tbody></table>\n");
+            write_buffered_stdout(&html)?;
+        }
     }
 
     Ok(())

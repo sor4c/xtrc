@@ -128,7 +128,9 @@ Integrate `xtrc` into your continuous integration pipeline (such as GitHub Actio
 Inspect the traceability graph on demand:
 - `xtrc matrix`: Generate a full traceability matrix (requirements vs code vs tests).
 - `xtrc tree REQ-AUTH-01`: Print the dependency tree for a specific requirement.
-- `xtrc export --format markdown`: Export compliance-ready documentation for external audits.
+- `xtrc export --format html`: Export self-contained, publication-ready HTML compliance audit reports.
+- `xtrc export --format json`: Export machine-readable JSON compliance telemetry.
+- `xtrc export --format markdown`: Export compliance documentation in Markdown.
 
 ---
 

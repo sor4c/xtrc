@@ -1,4 +1,4 @@
-// @trace:test SPEC-CLI-EXPORT, REQ-CMD-EXPORT, REQ-EXIT-CODES, REQ-UNIX-STREAMS
+// @trace:test SPEC-CLI-EXPORT, SPEC-REPORT-HTML, REQ-CMD-EXPORT, REQ-REPORT-HTML, REQ-REPORT-MACHINE, REQ-EXIT-CODES, REQ-UNIX-STREAMS
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -177,6 +177,52 @@ fn test_export_unsupported_format_exits_code_two() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("Unsupported output format"));
+}
+
+#[test]
+fn test_export_format_html() {
+    let temp = tempdir().expect("tempdir");
+    setup_export_workspace(temp.path());
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    let assert = cmd
+        .current_dir(temp.path())
+        .args(["export", "--format", "html"])
+        .assert()
+        .success();
+
+    let output = assert.get_output();
+    let html_str = String::from_utf8_lossy(&output.stdout);
+    assert!(html_str.contains("<!DOCTYPE html>"));
+    assert!(html_str.contains("<title>Traceability Compliance Audit Report</title>"));
+    assert!(html_str.contains("VIS-EXPORT"));
+    assert!(html_str.contains("REQ-EXPORT-01"));
+    assert!(html_str.contains("badge-pass"));
+    assert!(html_str.contains("<style>"));
+}
+
+#[test]
+fn test_export_format_html_file_atomic() {
+    let temp = tempdir().expect("tempdir");
+    setup_export_workspace(temp.path());
+    let out_file = temp.path().join("audit/compliance.html");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args([
+            "export",
+            "--format",
+            "html",
+            "--output",
+            out_file.to_str().expect("str"),
+        ])
+        .assert()
+        .success();
+
+    assert!(out_file.is_file());
+    let content = std::fs::read_to_string(&out_file).expect("read file");
+    assert!(content.contains("<!DOCTYPE html>"));
+    assert!(content.contains("VIS-EXPORT"));
 }
 
 #[test]
