@@ -416,9 +416,9 @@ This document defines the foundational requirements specification for `xtrc`, es
 - **ID**: REQ-NFR-PERF
 - **Parent**: US-UNIX-01
 - **Type**: Non-Functional Requirement
-- **Intent & Value**: Ensure developers run traceability verification frequently as part of their inner loop without noticeable workflow delays.
-- **Observable Contract & Behavior**: Repository traversal, file parsing, graph construction, and full graph verification execute in under 500 milliseconds on repositories containing at least 1,000 files.
-- **Acceptance Criteria**: Benchmarks and terminal executions on typical medium-sized repositories complete within the 500ms time budget; memory consumption remains bounded to repository metadata size.
+- **Intent & Value**: Ensure developers run traceability verification frequently as part of their inner loop without noticeable workflow delays, matching the throughput and resource efficiency of standard Unix text utilities.
+- **Observable Contract & Behavior**: Repository traversal, file parsing, graph construction, and full graph verification execute in under 500 milliseconds on repositories containing at least 1,000 files. Scanning and parsing employ fast literal pre-filtering before regex matching, lazy line boundary and line-number resolution around matches, single-pass binary sniffing and file ingestion, single-pass streaming document parsing, $O(V + E)$ linear-time graph reachability validation, and buffered output stream emission.
+- **Acceptance Criteria**: Benchmarks and terminal executions on typical medium-sized repositories complete within the 500ms time budget; files lacking `@trace` markers bypass full regex evaluation and line splitting; memory consumption remains bounded to repository metadata size.
 
 ### REQ-NFR-ROBUST: Robust Error Handling and Crash-Free Operation
 - **ID**: REQ-NFR-ROBUST
