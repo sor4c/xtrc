@@ -558,7 +558,7 @@ fn test_t4_rw10_refactoring_split_module_provenance_preservation() {
 // Real-World Workload 11: CI Verification, Packaging & SPDX SBOM Delivery Gates
 // ==============================================================================
 
-// @trace:test SPEC-CI-VERIFY, SPEC-CD-DELIVERY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CI-VERIFY, REQ-CD-MAIN
+// @trace:test SPEC-CI-VERIFY, SPEC-CD-DELIVERY, SPEC-VER-POLICY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CI-VERIFY, REQ-CD-MAIN, REQ-VER-POLICY
 #[test]
 fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
     let cargo_toml_raw =
@@ -618,19 +618,89 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
         "delivery.yml must generate an SPDX JSON SBOM"
     );
     assert!(
-        delivery_raw.contains("cargo deb")
+        delivery_raw.contains("cargo deb --no-build --deb-version")
             && delivery_raw.contains(".tar.gz")
+            && delivery_raw.contains("scripts/compute-version.sh")
             && delivery_raw.contains("scripts/generate-homebrew-formula.sh")
             && delivery_raw.contains("xtrc.rb"),
-        "delivery.yml must build .deb, .tar.gz, and Homebrew formula (xtrc.rb) installable packages"
+        "delivery.yml must compute unique version and build .deb, .tar.gz, and Homebrew formula (xtrc.rb)"
     );
 
-    // (3) Execute scripts/generate-sbom.sh and validate the generated SPDX 2.3 JSON SBOM
-    let tmp_dir = tempfile::tempdir().expect("create temp dir for sbom test");
+    // Verify scripts/compute-version.sh produces distinct versions for distinct commits
+    let tmp_dir = tempfile::tempdir().expect("create temp dir for sbom and version test");
+    let repo_dir = tmp_dir.path().join("ver_repo");
+    std::fs::create_dir_all(&repo_dir).expect("create ver_repo");
+    std::fs::write(
+        repo_dir.join("Cargo.toml"),
+        "[package]\nname = \"xtrc\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write Cargo.toml");
+
+    let run_git = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .current_dir(&repo_dir)
+            .args(args)
+            .status()
+            .expect("git command");
+        assert!(status.success());
+    };
+    run_git(&["init", "-q"]);
+    run_git(&["config", "user.email", "test@xtrc.dev"]);
+    run_git(&["config", "user.name", "xtrc test"]);
+    run_git(&["add", "Cargo.toml"]);
+    run_git(&["commit", "-q", "-m", "commit 1"]);
+
+    let v1_out = std::process::Command::new("bash")
+        .arg("scripts/compute-version.sh")
+        .arg(&repo_dir)
+        .output()
+        .expect("compute-version commit 1");
+    assert!(v1_out.status.success());
+    let v1 = String::from_utf8_lossy(&v1_out.stdout).trim().to_string();
+    assert!(
+        v1.starts_with("0.1.0-r1.g"),
+        "Expected 0.1.0-r1.g<sha>, got {v1}"
+    );
+
+    std::fs::write(repo_dir.join("README.md"), "# rev 2\n").expect("write README");
+    run_git(&["add", "README.md"]);
+    run_git(&["commit", "-q", "-m", "commit 2"]);
+
+    let v2_out = std::process::Command::new("bash")
+        .arg("scripts/compute-version.sh")
+        .arg(&repo_dir)
+        .output()
+        .expect("compute-version commit 2");
+    assert!(v2_out.status.success());
+    let v2 = String::from_utf8_lossy(&v2_out.stdout).trim().to_string();
+    assert!(
+        v2.starts_with("0.1.0-r2.g"),
+        "Expected 0.1.0-r2.g<sha>, got {v2}"
+    );
+    assert_ne!(
+        v1, v2,
+        "Different commits must never share the same delivery version"
+    );
+
+    // Exact release tag v0.1.0 must emit clean 0.1.0
+    run_git(&["tag", "v0.1.0"]);
+    let v_tag_out = std::process::Command::new("bash")
+        .arg("scripts/compute-version.sh")
+        .arg(&repo_dir)
+        .output()
+        .expect("compute-version tagged");
+    assert!(v_tag_out.status.success());
+    let v_tag = String::from_utf8_lossy(&v_tag_out.stdout)
+        .trim()
+        .to_string();
+    assert_eq!(v_tag, "0.1.0");
+
+    // (3) Execute scripts/generate-sbom.sh with explicit unique version and validate the generated SPDX 2.3 JSON SBOM
     let sbom_path = tmp_dir.path().join("xtrc.spdx.json");
     let status = std::process::Command::new("bash")
         .arg("scripts/generate-sbom.sh")
         .arg(&sbom_path)
+        .arg(&v2)
         .status()
         .expect("execute scripts/generate-sbom.sh");
     assert!(status.success(), "SBOM generator script must succeed");
@@ -651,10 +721,11 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
         .and_then(|p| p.as_array())
         .expect("SPDX JSON must contain packages array");
     assert!(
-        packages
-            .iter()
-            .any(|p| p.get("name").and_then(|n| n.as_str()) == Some("xtrc")),
-        "SPDX packages must include root package xtrc"
+        packages.iter().any(|p| {
+            p.get("name").and_then(|n| n.as_str()) == Some("xtrc")
+                && p.get("versionInfo").and_then(|v| v.as_str()) == Some(v2.as_str())
+        }),
+        "SPDX packages must include root package xtrc stamped with unique delivery version {v2}"
     );
     let relationships = sbom_json
         .get("relationships")
@@ -668,12 +739,12 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
     // (1) Execute scripts/generate-homebrew-formula.sh and validate the generated Homebrew formula (xtrc.rb)
     let dummy_tarball = tmp_dir
         .path()
-        .join("xtrc-v0.1.0-x86_64-unknown-linux-gnu.tar.gz");
+        .join(format!("xtrc-v{v2}-x86_64-unknown-linux-gnu.tar.gz"));
     std::fs::write(&dummy_tarball, b"dummy-tarball-bytes").expect("write dummy tarball");
     let formula_path = tmp_dir.path().join("xtrc.rb");
     let brew_status = std::process::Command::new("bash")
         .arg("scripts/generate-homebrew-formula.sh")
-        .arg("0.1.0")
+        .arg(&v2)
         .arg(&dummy_tarball)
         .arg(&formula_path)
         .status()
@@ -686,5 +757,5 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
     assert!(formula_raw.contains("class Xtrc < Formula"));
     assert!(formula_raw.contains("bin.install \"xtrc\""));
     assert!(formula_raw.contains("doc.install \"README.md\", \"xtrc.spdx.json\""));
-    assert!(formula_raw.contains("version \"0.1.0\""));
+    assert!(formula_raw.contains(&format!("version \"{v2}\"")));
 }
