@@ -96,6 +96,7 @@ schema_version: "1.0.0"
 - **Verification Target**: tests/e2e/tier4_real_world.rs
 - **Technical Specification**:
   - Workflow Path: `.github/workflows/delivery.yml`.
+  - Concurrency: `concurrency: { group: delivery-main, cancel-in-progress: false }` to serialize delivery runs and eliminate release creation races.
   - Triggers: `push` to `main` branch and `workflow_dispatch`.
   - Job 1 (`verify`): Runs all mandatory quality and performance gates (`cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, `cargo run --locked -- check --strict`, `bash scripts/measure-perf.sh dist/perf-report.json`).
   - Job 2 (`deliver`, requires `verify`):

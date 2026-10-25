@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::cli::output::{StreamEnvironment, UniversalEnvelope};
+use crate::cli::output::{write_buffered_stdout, StreamEnvironment, UniversalEnvelope};
 use crate::cli::pipeline::load_workspace_graph;
 use crate::error::{CliError, GraphError};
 use crate::graph::model::TraceabilityGraph;
@@ -162,7 +162,7 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
                 cycle_detected |= walker.cycle_detected;
             }
         }
-        print!("{output_buf}");
+        write_buffered_stdout(&output_buf)?;
     }
 
     // 3. Cycle defect checking

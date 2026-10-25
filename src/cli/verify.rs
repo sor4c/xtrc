@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::cli::output::StreamEnvironment;
+use crate::cli::output::{write_buffered_stdout, StreamEnvironment};
 use crate::cli::pipeline::load_workspace_graph;
 use crate::error::CliError;
 use crate::graph::validator::{validate_graph, ValidationOptions};
@@ -100,9 +100,9 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
         let json_str = report
             .to_json()
             .map_err(|e| CliError::Io(std::io::Error::other(e)))?;
-        println!("{json_str}");
+        write_buffered_stdout(&format!("{json_str}\n"))?;
     } else if !options.quiet {
-        println!("{}", report.format_terminal_summary());
+        write_buffered_stdout(&format!("{}\n", report.format_terminal_summary()))?;
     }
 
     // 8. Determine exit code contract

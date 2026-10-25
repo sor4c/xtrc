@@ -8,8 +8,8 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::output::{
-    is_terminal_stdout, render_aligned_table, render_csv, render_markdown_table, MatrixFormat,
-    StreamEnvironment, UniversalEnvelope,
+    is_terminal_stdout, render_aligned_table, render_csv, render_markdown_table,
+    write_buffered_stdout, MatrixFormat, StreamEnvironment, UniversalEnvelope,
 };
 use crate::cli::pipeline::load_workspace_graph;
 use crate::error::CliError;
@@ -201,7 +201,7 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
                 })
                 .collect();
             let table = render_markdown_table(&headers, &row_cells);
-            print!("{table}");
+            write_buffered_stdout(&table)?;
         }
         MatrixFormat::Csv => {
             let row_cells: Vec<Vec<String>> = rows
@@ -227,7 +227,7 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
                 })
                 .collect();
             let csv = render_csv(&headers, &row_cells);
-            print!("{csv}");
+            write_buffered_stdout(&csv)?;
         }
         MatrixFormat::Table => {
             let row_cells: Vec<Vec<String>> = rows
@@ -253,7 +253,7 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
                 })
                 .collect();
             let table = render_aligned_table(&headers, &row_cells);
-            print!("{table}");
+            write_buffered_stdout(&table)?;
         }
     }
 
