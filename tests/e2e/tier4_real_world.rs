@@ -553,3 +553,112 @@ fn test_t4_rw10_refactoring_split_module_provenance_preservation() {
         assert!(output.status.success());
     }
 }
+
+// ==============================================================================
+// Real-World Workload 11: CI Verification, Packaging & SPDX SBOM Delivery Gates
+// ==============================================================================
+
+// @trace:test SPEC-CI-VERIFY, SPEC-CD-DELIVERY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CI-VERIFY, REQ-CD-MAIN
+#[test]
+fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
+    let cargo_toml_raw =
+        std::fs::read_to_string("Cargo.toml").expect("Cargo.toml must be readable");
+    let cargo_toml: toml::Value =
+        toml::from_str(&cargo_toml_raw).expect("Cargo.toml must be valid TOML");
+
+    // (1) Verify standard Rust package & Debian / cargo-binstall metadata
+    let deb_meta = cargo_toml
+        .get("package")
+        .and_then(|p| p.get("metadata"))
+        .and_then(|m| m.get("deb"))
+        .expect("[package.metadata.deb] must be configured in Cargo.toml");
+    assert!(
+        deb_meta.get("assets").is_some(),
+        "Debian package metadata must declare binary and doc assets"
+    );
+
+    let binstall_meta = cargo_toml
+        .get("package")
+        .and_then(|p| p.get("metadata"))
+        .and_then(|m| m.get("binstall"))
+        .expect("[package.metadata.binstall] must be configured in Cargo.toml");
+    assert_eq!(
+        binstall_meta.get("pkg-fmt").and_then(|v| v.as_str()),
+        Some("tgz")
+    );
+
+    // (5) Verify Continuous Verification GitHub Action (.github/workflows/ci.yml)
+    let ci_raw = std::fs::read_to_string(".github/workflows/ci.yml")
+        .expect(".github/workflows/ci.yml must exist");
+    let ci_yaml: serde_yaml::Value =
+        serde_yaml::from_str(&ci_raw).expect("ci.yml must be valid YAML");
+    assert!(ci_yaml.get("on").is_some(), "ci.yml must define triggers");
+    assert!(ci_raw.contains("cargo fmt --check"));
+    assert!(ci_raw.contains("cargo clippy --all-targets --all-features -- -D warnings"));
+    assert!(ci_raw.contains("cargo test --all-targets --all-features"));
+    assert!(ci_raw.contains("check --strict"));
+
+    // (3) & (4) Verify Head-of-Main Delivery & SPDX JSON SBOM GitHub Action (.github/workflows/delivery.yml)
+    let delivery_raw = std::fs::read_to_string(".github/workflows/delivery.yml")
+        .expect(".github/workflows/delivery.yml must exist");
+    let delivery_yaml: serde_yaml::Value =
+        serde_yaml::from_str(&delivery_raw).expect("delivery.yml must be valid YAML");
+    let deliver_job = delivery_yaml
+        .get("jobs")
+        .and_then(|j| j.get("deliver"))
+        .expect("delivery.yml must contain 'deliver' job");
+    assert_eq!(
+        deliver_job.get("needs").and_then(|n| n.as_str()),
+        Some("verify"),
+        "deliver job must depend on verify job passing first"
+    );
+    assert!(
+        delivery_raw.contains("scripts/generate-sbom.sh")
+            && delivery_raw.contains("xtrc.spdx.json"),
+        "delivery.yml must generate an SPDX JSON SBOM"
+    );
+    assert!(
+        delivery_raw.contains("cargo deb") && delivery_raw.contains(".tar.gz"),
+        "delivery.yml must build .deb and .tar.gz installable packages"
+    );
+
+    // (3) Execute scripts/generate-sbom.sh and validate the generated SPDX 2.3 JSON SBOM
+    let tmp_dir = tempfile::tempdir().expect("create temp dir for sbom test");
+    let sbom_path = tmp_dir.path().join("xtrc.spdx.json");
+    let status = std::process::Command::new("bash")
+        .arg("scripts/generate-sbom.sh")
+        .arg(&sbom_path)
+        .status()
+        .expect("execute scripts/generate-sbom.sh");
+    assert!(status.success(), "SBOM generator script must succeed");
+
+    let sbom_raw = std::fs::read_to_string(&sbom_path).expect("read generated SPDX JSON SBOM");
+    let sbom_json: serde_json::Value =
+        serde_json::from_str(&sbom_raw).expect("SBOM must be valid JSON");
+    assert_eq!(
+        sbom_json.get("spdxVersion").and_then(|v| v.as_str()),
+        Some("SPDX-2.3")
+    );
+    assert_eq!(
+        sbom_json.get("dataLicense").and_then(|v| v.as_str()),
+        Some("CC0-1.0")
+    );
+    let packages = sbom_json
+        .get("packages")
+        .and_then(|p| p.as_array())
+        .expect("SPDX JSON must contain packages array");
+    assert!(
+        packages
+            .iter()
+            .any(|p| p.get("name").and_then(|n| n.as_str()) == Some("xtrc")),
+        "SPDX packages must include root package xtrc"
+    );
+    let relationships = sbom_json
+        .get("relationships")
+        .and_then(|r| r.as_array())
+        .expect("SPDX JSON must contain relationships array");
+    assert!(
+        !relationships.is_empty(),
+        "SPDX relationships must not be empty"
+    );
+}

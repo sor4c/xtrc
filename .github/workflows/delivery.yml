@@ -1,0 +1,118 @@
+# @trace SPEC-CD-DELIVERY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN
+name: Head-of-Main Delivery
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify All Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting (cargo fmt)
+        run: cargo fmt --check
+
+      - name: Run strict linter diagnostics (cargo clippy)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run automated test suite (cargo test)
+        run: cargo test --all-targets --all-features
+
+      - name: Verify repository bidirectional traceability (xtrc check --strict)
+        run: cargo run --locked -- check --strict
+
+  deliver:
+    name: Build Package, SPDX SBOM & Publish Delivery
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Debian packaging tool (cargo-deb)
+        run: cargo install cargo-deb --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Generate SPDX 2.3 JSON SBOM and package deliverables
+        run: |
+          VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          TARGET="x86_64-unknown-linux-gnu"
+          STAGE_DIR="dist/xtrc-v${VERSION}-${TARGET}"
+          mkdir -p "${STAGE_DIR}"
+
+          # 1. Generate SPDX 2.3 JSON SBOM (Requirement 3)
+          bash scripts/generate-sbom.sh dist/xtrc.spdx.json
+          jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0) and (.relationships | length > 0)' dist/xtrc.spdx.json >/dev/null
+
+          # 2. Build Debian package (.deb) containing binary, docs, and SPDX SBOM (Requirements 1 & 3)
+          cargo deb --no-build --output "dist/xtrc_${VERSION}_amd64.deb"
+
+          # 3. Build portable binary archive (.tar.gz) including SPDX SBOM (Requirements 1 & 3)
+          cp target/release/xtrc "${STAGE_DIR}/xtrc"
+          cp README.md "${STAGE_DIR}/README.md"
+          if [ -f LICENSE ]; then cp LICENSE "${STAGE_DIR}/LICENSE"; fi
+          cp dist/xtrc.spdx.json "${STAGE_DIR}/xtrc.spdx.json"
+          tar -C dist -czf "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "xtrc-v${VERSION}-${TARGET}"
+          rm -rf "${STAGE_DIR}"
+
+          # 4. Generate SHA-256 checksums for all delivery artifacts
+          (cd dist && sha256sum xtrc.spdx.json *.deb *.tar.gz > SHA256SUMS)
+
+      - name: Upload head-of-main delivery artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xtrc-main-delivery
+          path: |
+            dist/xtrc.spdx.json
+            dist/*.deb
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Publish rolling head-of-main GitHub Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="main-head"
+          TITLE="xtrc Head-of-Main Delivery (${GITHUB_SHA::7})"
+          NOTES="Automated head-of-main delivery for commit ${GITHUB_SHA}. Includes prebuilt Linux binary archive (.tar.gz), Debian package (.deb), SHA256SUMS, and SPDX 2.3 JSON SBOM (xtrc.spdx.json)."
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" dist/xtrc.spdx.json dist/*.deb dist/*.tar.gz dist/SHA256SUMS --clobber
+            gh release edit "${TAG}" --title "${TITLE}" --notes "${NOTES}" --target "${GITHUB_SHA}"
+          else
+            gh release create "${TAG}" dist/xtrc.spdx.json dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+              --title "${TITLE}" \
+              --notes "${NOTES}" \
+              --target "${GITHUB_SHA}" \
+              --prerelease
+          fi
+
