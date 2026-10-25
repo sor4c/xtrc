@@ -1,0 +1,89 @@
+[package]
+name = "xtrc"
+version = "0.1.0"
+edition = "2021"
+authors = ["xtrc contributors"]
+description = "Fast, plain-text traceability CLI and 7-layer DAG engine in Rust"
+readme = "README.md"
+license = "MIT"
+keywords = ["traceability", "requirements", "vcs", "dag", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+name = "xtrc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xtrc"
+path = "src/main.rs"
+
+[[test]]
+name = "test_init"
+path = "tests/cli/test_init.rs"
+
+[[test]]
+name = "test_verify"
+path = "tests/cli/test_verify.rs"
+
+[[test]]
+name = "test_matrix"
+path = "tests/cli/test_matrix.rs"
+
+[[test]]
+name = "test_tree"
+path = "tests/cli/test_tree.rs"
+
+[[test]]
+name = "test_export"
+path = "tests/cli/test_export.rs"
+
+[[test]]
+name = "test_output"
+path = "tests/cli/test_output.rs"
+
+[[test]]
+name = "test_discovery"
+path = "tests/config/test_discovery.rs"
+
+[[test]]
+name = "test_traversal"
+path = "tests/scanner/test_traversal.rs"
+
+[[test]]
+name = "test_identifier"
+path = "tests/model/test_identifier.rs"
+
+[[test]]
+name = "test_document"
+path = "tests/parser/test_document.rs"
+
+[[test]]
+name = "test_comments"
+path = "tests/scanner/test_comments.rs"
+
+[[test]]
+name = "test_graph"
+path = "tests/graph/mod.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+toml = "0.8"
+ignore = "0.4"
+globset = "0.4"
+regex = "1.13"
+thiserror = "2.0"
+anyhow = "1.0"
+colored = "3.1"
+rayon = "1.12"
+
+[dev-dependencies]
+assert_cmd = "2.2"
+predicates = "3.1"
+tempfile = "3.27"
