@@ -137,7 +137,7 @@ pub enum Commands {
 
     /// Generate consolidated compliance audit export documentation.
     Export {
-        /// Export format (markdown, json, csv).
+        /// Export format (markdown, json, csv, html).
         #[arg(short = 'f', long, default_value = "markdown")]
         format: String,
 

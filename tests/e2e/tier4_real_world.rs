@@ -352,7 +352,7 @@ status: approved
 // Real-World Workload 7: Compliance Audit Export Pipeline
 // ==============================================================================
 
-// @trace:test SPEC-CLI-EXPORT, SPEC-CLI-OUTPUT, REQ-CMD-EXPORT
+// @trace:test SPEC-CLI-EXPORT, SPEC-REPORT-HTML, SPEC-CLI-OUTPUT, REQ-CMD-EXPORT, REQ-REPORT-HTML, REQ-REPORT-MACHINE
 #[test]
 fn test_t4_rw07_compliance_audit_export_pipeline() {
     let ws = TestWorkspace::new();
@@ -361,9 +361,11 @@ fn test_t4_rw07_compliance_audit_export_pipeline() {
     let audit_dir = ws.path().join("compliance_audit");
     let md_path = audit_dir.join("traceability_matrix.md");
     let json_path = audit_dir.join("traceability_matrix.json");
+    let html_path = audit_dir.join("traceability_matrix.html");
 
     let md_str = md_path.to_str().expect("valid str");
     let json_str = json_path.to_str().expect("valid str");
+    let html_str = html_path.to_str().expect("valid str");
 
     let mut cmd_md = ws.cmd();
     cmd_md.args(["export", "--format", "markdown", "--output", md_str]);
@@ -382,6 +384,17 @@ fn test_t4_rw07_compliance_audit_export_pipeline() {
         let json_text = std::fs::read_to_string(&json_path).expect("read file");
         let parsed: serde_json::Value = serde_json::from_str(&json_text).expect("valid json");
         assert!(parsed.is_object() || parsed.is_array());
+    }
+
+    let mut cmd_html = ws.cmd();
+    cmd_html.args(["export", "--format", "html", "--output", html_str]);
+    {
+        let output = run_cli(&mut cmd_html);
+        assert_eq!(output.status.code(), Some(0));
+        assert!(html_path.is_file());
+        let html_text = std::fs::read_to_string(&html_path).expect("read html");
+        assert!(html_text.contains("<!DOCTYPE html>"));
+        assert!(html_text.contains("Traceability Compliance Audit Report"));
     }
 }
 

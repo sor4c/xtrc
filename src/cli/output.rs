@@ -28,6 +28,8 @@ pub enum OutputFormat {
     Csv,
     /// Machine-readable universal JSON document.
     Json,
+    /// Standalone human-readable HTML document.
+    Html,
 }
 
 impl FromStr for OutputFormat {
@@ -39,6 +41,7 @@ impl FromStr for OutputFormat {
             "markdown" | "md" => Ok(Self::Markdown),
             "csv" => Ok(Self::Csv),
             "json" => Ok(Self::Json),
+            "html" | "htm" => Ok(Self::Html),
             other => Err(CliError::InvalidFormat {
                 format: other.to_string(),
             }),
@@ -53,6 +56,7 @@ impl fmt::Display for OutputFormat {
             Self::Markdown => write!(f, "markdown"),
             Self::Csv => write!(f, "csv"),
             Self::Json => write!(f, "json"),
+            Self::Html => write!(f, "html"),
         }
     }
 }
