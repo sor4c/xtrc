@@ -34,8 +34,8 @@ schema_version: "1.0.0"
 - **Parent**: US-CICD-01
 - **Type**: Functional Requirement
 - **Intent & Value**: Enable users and automation environments to install the `xtrc` CLI effortlessly using standard system and Rust package managers.
-- **Observable Contract & Behavior**: Provides standard Rust package metadata (`Cargo.toml`, `cargo-binstall`) and produces prebuilt binary archives (`.tar.gz`) and Debian packages (`.deb`) installing the `xtrc` binary to standard system paths.
-- **Acceptance Criteria**: `Cargo.toml` defines valid `[package.metadata.deb]` and `[package.metadata.binstall]` sections; delivery pipeline emits `.deb` and `.tar.gz` artifacts alongside SHA-256 checksums.
+- **Observable Contract & Behavior**: Provides standard Rust package metadata (`Cargo.toml`, `cargo-binstall`) and produces Homebrew formulas (`xtrc.rb`), Debian packages (`.deb`), and prebuilt binary archives (`.tar.gz`) installing the `xtrc` binary and SBOM documentation to standard system paths.
+- **Acceptance Criteria**: `Cargo.toml` defines valid `[package.metadata.deb]` and `[package.metadata.binstall]` sections; delivery pipeline emits `xtrc.rb`, `.deb`, and `.tar.gz` artifacts alongside SHA-256 checksums.
 
 ### REQ-PKG-SBOM: SPDX JSON Software Bill of Materials in Every Delivery
 - **ID**: REQ-PKG-SBOM
@@ -83,7 +83,7 @@ schema_version: "1.0.0"
 - **ID**: SPEC-CD-DELIVERY
 - **Parent**: REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CD-MAIN, US-CICD-01
 - **Type**: TechnicalSpec
-- **Component Target**: .github/workflows/delivery.yml, scripts/generate-sbom.sh, Cargo.toml
+- **Component Target**: .github/workflows/delivery.yml, scripts/generate-sbom.sh, scripts/generate-homebrew-formula.sh, Cargo.toml
 - **Verification Target**: tests/e2e/tier4_real_world.rs
 - **Technical Specification**:
   - Workflow Path: `.github/workflows/delivery.yml`.
@@ -93,6 +93,7 @@ schema_version: "1.0.0"
     1. Compiles optimized release binary (`cargo build --release --locked`).
     2. Generates SPDX 2.3 JSON SBOM (`dist/xtrc.spdx.json`) via `scripts/generate-sbom.sh`.
     3. Builds Debian package (`dist/xtrc_<version>_amd64.deb`) via `cargo-deb` (embedding `/usr/share/doc/xtrc/xtrc.spdx.json`).
-    4. Packages release tarball (`dist/xtrc-v<version>-x86_64-unknown-linux-gnu.tar.gz`) containing `xtrc`, `README.md`, `LICENSE`, and `xtrc.spdx.json`, plus `dist/SHA256SUMS`.
-    5. Uploads `dist/*` as GitHub Actions workflow artifacts and publishes to the rolling `main-head` GitHub Release.
+    4. Packages release tarball (`dist/xtrc-v<version>-x86_64-unknown-linux-gnu.tar.gz`) containing `xtrc`, `README.md`, `LICENSE`, and `xtrc.spdx.json`.
+    5. Generates Homebrew package formula (`dist/xtrc.rb`) via `scripts/generate-homebrew-formula.sh` with computed tarball SHA-256 checksum, plus `dist/SHA256SUMS`.
+    6. Uploads `dist/*` as GitHub Actions workflow artifacts and publishes to the rolling `main-head` GitHub Release.
 
