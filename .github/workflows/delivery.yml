@@ -83,8 +83,11 @@ jobs:
           tar -C dist -czf "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "xtrc-v${VERSION}-${TARGET}"
           rm -rf "${STAGE_DIR}"
 
-          # 4. Generate SHA-256 checksums for all delivery artifacts
-          (cd dist && sha256sum xtrc.spdx.json *.deb *.tar.gz > SHA256SUMS)
+          # 4. Generate Homebrew Formula package (xtrc.rb) with tarball SHA-256 (Requirement 1)
+          bash scripts/generate-homebrew-formula.sh "${VERSION}" "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "dist/xtrc.rb" "${GITHUB_REPOSITORY:-sor4c/xtrc}" "main-head"
+
+          # 5. Generate SHA-256 checksums for all delivery artifacts
+          (cd dist && sha256sum xtrc.spdx.json xtrc.rb *.deb *.tar.gz > SHA256SUMS)
 
       - name: Upload head-of-main delivery artifacts
         uses: actions/upload-artifact@v4
@@ -92,6 +95,7 @@ jobs:
           name: xtrc-main-delivery
           path: |
             dist/xtrc.spdx.json
+            dist/xtrc.rb
             dist/*.deb
             dist/*.tar.gz
             dist/SHA256SUMS
@@ -104,12 +108,12 @@ jobs:
         run: |
           TAG="main-head"
           TITLE="xtrc Head-of-Main Delivery (${GITHUB_SHA::7})"
-          NOTES="Automated head-of-main delivery for commit ${GITHUB_SHA}. Includes prebuilt Linux binary archive (.tar.gz), Debian package (.deb), SHA256SUMS, and SPDX 2.3 JSON SBOM (xtrc.spdx.json)."
+          NOTES="Automated head-of-main delivery for commit ${GITHUB_SHA}. Includes Homebrew formula (xtrc.rb), Debian package (.deb), prebuilt Linux binary archive (.tar.gz), SHA256SUMS, and SPDX 2.3 JSON SBOM (xtrc.spdx.json)."
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" dist/xtrc.spdx.json dist/*.deb dist/*.tar.gz dist/SHA256SUMS --clobber
+            gh release upload "${TAG}" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS --clobber
             gh release edit "${TAG}" --title "${TITLE}" --notes "${NOTES}" --target "${GITHUB_SHA}"
           else
-            gh release create "${TAG}" dist/xtrc.spdx.json dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+            gh release create "${TAG}" dist/xtrc.spdx.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
               --title "${TITLE}" \
               --notes "${NOTES}" \
               --target "${GITHUB_SHA}" \
