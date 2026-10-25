@@ -6,8 +6,27 @@ authors = ["xtrc contributors"]
 description = "Fast, plain-text traceability CLI and 7-layer DAG engine in Rust"
 readme = "README.md"
 license = "MIT"
+repository = "https://github.com/sor4c/xtrc"
+homepage = "https://github.com/sor4c/xtrc"
 keywords = ["traceability", "requirements", "vcs", "dag", "cli"]
 categories = ["command-line-utilities", "development-tools"]
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/main-head/{ name }-v{ version }-{ target }.tar.gz"
+bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.deb]
+maintainer = "xtrc contributors"
+copyright = "2026, xtrc contributors"
+depends = "$auto"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/xtrc", "usr/bin/xtrc", "755"],
+    ["README.md", "usr/share/doc/xtrc/README.md", "644"],
+    ["dist/xtrc.spdx.json", "usr/share/doc/xtrc/xtrc.spdx.json", "644"],
+]
 
 [lib]
 name = "xtrc"

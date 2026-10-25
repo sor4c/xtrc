@@ -143,6 +143,20 @@ If developing locally without Docker/Dev Containers, ensure you have:
 - **Rust Toolchain**: Stable Rust installed via [rustup](https://rustup.rs/).
 - **Cargo**: Rust's package manager and build system.
 
+### Installation & Packaging
+`xtrc` can be installed via standard Rust and Linux package managers:
+```bash
+# Install directly via Cargo
+cargo install --path .
+
+# Install prebuilt binary via cargo-binstall
+cargo binstall xtrc
+
+# Install Debian package (.deb) from a release / head-of-main delivery
+sudo dpkg -i xtrc_<version>_amd64.deb
+```
+Every automated head-of-`main` delivery in [`.github/workflows/delivery.yml`](.github/workflows/delivery.yml) produces a prebuilt `.tar.gz` archive, a Debian `.deb` package, `SHA256SUMS`, and an SPDX 2.3 JSON Software Bill of Materials (`xtrc.spdx.json`).
+
 ### Build and Test Commands
 ```bash
 # Build the project
