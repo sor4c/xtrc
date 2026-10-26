@@ -57,9 +57,9 @@ schema_version: "1.0.0"
 - **ID**: REQ-VER-BUMP-PATCH
 - **Parent**: REQ-VER-POLICY, US-PERF-01
 - **Type**: Functional Requirement
-- **Intent & Value**: Increment patch version in `Cargo.toml` from `0.1.0` to `0.1.1` to release bug fixes, performance enhancements, and the new demo/reports feature.
-- **Observable Contract & Behavior**: Updates `Cargo.toml` and `Cargo.lock` to `0.1.1`, ensuring Head-of-Main delivery produces release `v0.1.1`.
-- **Acceptance Criteria**: `cargo check` and `scripts/compute-version.sh` reflect `0.1.1`.
+- **Intent & Value**: Increment patch version in `Cargo.toml` from `0.1.1` to `0.1.2` to release bug fixes, performance enhancements, and the new demo/reports feature.
+- **Observable Contract & Behavior**: Updates `Cargo.toml` and `Cargo.lock` to `0.1.2`, ensuring Head-of-Main delivery produces release `v0.1.2`.
+- **Acceptance Criteria**: `cargo check` and `scripts/compute-version.sh` reflect `0.1.2`.
 
 ## 3. Layer 6: Technical Specifications (SPEC-*)
 
@@ -108,6 +108,6 @@ schema_version: "1.0.0"
 - **Component Target**: Cargo.toml, Cargo.lock, build.rs
 - **Verification Target**: tests/e2e/test_demo.rs, tests/e2e/tier4_real_world.rs
 - **Technical Specification**:
-  - Increments package version in `Cargo.toml` from `0.1.0` to `0.1.1`.
+  - Increments package version in `Cargo.toml` from `0.1.1` to `0.1.2`.
   - Statically and dynamically guarantees unique delivery releases via `scripts/compute-version.sh`.
 

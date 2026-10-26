@@ -358,7 +358,7 @@ fn test_nfr_determ_reproducible_parallel_execution() {
     for iteration in 0..5 {
         let (_root, _config, graph) =
             load_workspace_graph(Some(dir.path()), None).expect("parallel load");
-        let report = validate_graph(
+        let mut report = validate_graph(
             &graph,
             &ValidationOptions {
                 strict: true,
@@ -367,6 +367,8 @@ fn test_nfr_determ_reproducible_parallel_execution() {
                 id_filter: None,
             },
         );
+        // Normalize timestamp across iterations to test algorithmic determinism of graph and report content
+        report.timestamp = "1970-01-01T00:00:00Z".to_string();
         let json = report.to_json().expect("serialize report json");
         let summary = report.format_terminal_summary();
         let links_len = graph.all_links().len();
