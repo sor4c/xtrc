@@ -13,10 +13,16 @@ fn main() -> ExitCode {
         Err(err) => {
             match &err {
                 xtrc::error::CliError::InvalidArguments { reason } => {
-                    if reason.ends_with('\n') {
-                        eprint!("{reason}");
+                    if reason.starts_with("error:") || reason.starts_with("Error:") {
+                        if reason.ends_with('\n') {
+                            eprint!("{reason}");
+                        } else {
+                            eprintln!("{reason}");
+                        }
+                    } else if reason.ends_with('\n') {
+                        eprint!("Error: {reason}");
                     } else {
-                        eprintln!("{reason}");
+                        eprintln!("Error: {reason}");
                     }
                 }
                 _ => {

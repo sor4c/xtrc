@@ -227,3 +227,14 @@ fn test_unconfigured_files_like_readme_not_scanned_for_trace_links() {
     assert_eq!(val["statistics"]["code_links"], 2);
     assert_eq!(val["statistics"]["test_links"], 2);
 }
+
+#[test]
+fn test_cli_argument_error_formatting() {
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.args(["--unknown-flag"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error: unexpected argument '--unknown-flag'",
+        ));
+}
