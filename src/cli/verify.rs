@@ -79,7 +79,13 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
     };
 
     // 4. Execute 4-stage validation
-    let report = validate_graph(&graph, &validation_options);
+    let mut report = validate_graph(&graph, &validation_options);
+
+    let is_empty_graph = graph.is_empty();
+    let is_empty_fatal = is_strict && is_empty_graph;
+    if is_empty_fatal {
+        report.status = "fail".to_string();
+    }
 
     // 5. Detect and report circular dependencies to stderr
     let cycles = graph.find_all_cycles();
@@ -96,6 +102,19 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
         eprint!("{diagnostics}");
     }
 
+    if is_empty_graph {
+        let globs = config.specs.include.join(", ");
+        if is_strict {
+            eprintln!(
+                "[ERROR] Empty traceability graph: no specification nodes found matching spec include patterns: [{globs}]"
+            );
+        } else {
+            eprintln!(
+                "[WARN] Empty traceability graph: no specification nodes found matching spec include patterns: [{globs}]"
+            );
+        }
+    }
+
     // 7. Stream structured report exclusively to stdout
     if options.json {
         let json_str = report
@@ -107,13 +126,14 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
     }
 
     // 8. Determine exit code contract
-    if !report.is_success(is_strict) || !cycles.is_empty() {
+    if !report.is_success(is_strict) || !cycles.is_empty() || is_empty_fatal {
         let fatal_count = report
             .violations
             .iter()
             .filter(|v| v.is_fatal(is_strict))
             .count()
-            + cycles.len();
+            + cycles.len()
+            + if is_empty_fatal { 1 } else { 0 };
         return Err(CliError::VerificationFailure {
             violations: fatal_count,
         });

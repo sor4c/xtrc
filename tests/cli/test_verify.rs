@@ -238,3 +238,51 @@ fn test_cli_argument_error_formatting() {
             "error: unexpected argument '--unknown-flag'",
         ));
 }
+
+#[test]
+fn test_check_empty_graph_warns_and_exits_zero() {
+    let temp = tempdir().expect("tempdir");
+    let config = r#"version = "1"
+[project]
+name = "empty-test"
+root = "."
+
+[specs]
+include = ["docs/**/*.md"]
+"#;
+    std::fs::write(temp.path().join(".xtrc.toml"), config).expect("write config");
+    std::fs::create_dir_all(temp.path().join("docs")).expect("create docs");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .arg("check")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "[WARN] Empty traceability graph: no specification nodes found matching spec include patterns: [docs/**/*.md]",
+        ));
+}
+
+#[test]
+fn test_check_empty_graph_strict_fails_with_exit_code_one() {
+    let temp = tempdir().expect("tempdir");
+    let config = r#"version = "1"
+[project]
+name = "empty-test"
+root = "."
+
+[specs]
+include = ["docs/**/*.md"]
+"#;
+    std::fs::write(temp.path().join(".xtrc.toml"), config).expect("write config");
+    std::fs::create_dir_all(temp.path().join("docs")).expect("create docs");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["check", "--strict"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "[ERROR] Empty traceability graph: no specification nodes found matching spec include patterns: [docs/**/*.md]",
+        ));
+}
