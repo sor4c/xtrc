@@ -55,6 +55,21 @@ pub fn load_workspace_graph_ext(
     let all_nodes: Vec<TraceNode> = if categorized.specs.len() <= 2 {
         let mut nodes = Vec::new();
         for spec_file in &categorized.specs {
+            let content = match std::fs::read_to_string(spec_file) {
+                Ok(c) => c,
+                Err(e) => return Err(CliError::Io(e)),
+            };
+            if !crate::parser::document::has_frontmatter(&content)
+                && !crate::parser::document::has_spec_headings(&content)
+            {
+                if verbose {
+                    eprintln!(
+                        "[INFO] Skipping non-spec Markdown file (no frontmatter or node headings): {}",
+                        spec_file.display()
+                    );
+                }
+                continue;
+            }
             let mut file_nodes = parse_spec_file(spec_file)?;
             for node in &mut file_nodes {
                 if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
@@ -69,6 +84,21 @@ pub fn load_workspace_graph_ext(
             .specs
             .par_iter()
             .map(|spec_file| {
+                let content = std::fs::read_to_string(spec_file).map_err(|err| ParseError::Io {
+                    path: spec_file.to_path_buf(),
+                    source: err,
+                })?;
+                if !crate::parser::document::has_frontmatter(&content)
+                    && !crate::parser::document::has_spec_headings(&content)
+                {
+                    if verbose {
+                        eprintln!(
+                            "[INFO] Skipping non-spec Markdown file (no frontmatter or node headings): {}",
+                            spec_file.display()
+                        );
+                    }
+                    return Ok(Vec::new());
+                }
                 let mut file_nodes = parse_spec_file(spec_file)?;
                 for node in &mut file_nodes {
                     if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {

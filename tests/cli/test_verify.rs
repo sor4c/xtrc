@@ -301,3 +301,25 @@ fn test_verbose_flag_prints_file_discovery_counts_to_stderr() {
             "[INFO] Discovered files: 1 specs, 1 code, 1 tests",
         ));
 }
+
+#[test]
+fn test_non_spec_markdown_file_under_docs_is_skipped() {
+    let temp = tempdir().expect("tempdir");
+    setup_valid_workspace(temp.path());
+
+    // Write a regular guide markdown file under docs/ that has no frontmatter and no node headings
+    std::fs::write(
+        temp.path().join("docs/guide.md"),
+        "# Developer Guide\n\nThis is a standard markdown document explaining setup.\n\n## Section 1\nSome instructions.",
+    )
+    .expect("write guide");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["-v", "check"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "Skipping non-spec Markdown file (no frontmatter or node headings)",
+        ));
+}

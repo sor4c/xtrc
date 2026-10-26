@@ -324,6 +324,46 @@ fn is_attempted_node_id(candidate: &str) -> bool {
     false
 }
 
+/// Returns true if markdown content contains any heading that defines or attempts to define a spec node.
+pub fn has_spec_headings(content: &str) -> bool {
+    let trimmed_start = content.strip_prefix('\u{feff}').unwrap_or(content);
+    let mut in_code_block = false;
+
+    for line in trimmed_start.lines() {
+        let trimmed_line = line.trim();
+        if trimmed_line.starts_with("```") || trimmed_line.starts_with("~~~") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if in_code_block {
+            continue;
+        }
+
+        let is_indented_code = line.starts_with("    ") || line.starts_with('\t');
+        if !is_indented_code && trimmed_line.starts_with('#') {
+            let hash_count = trimmed_line.bytes().take_while(|&b| b == b'#').count();
+            if hash_count == 3 || hash_count == 4 {
+                let remainder = trimmed_line[hash_count..].trim_start();
+                let (id_part, _) = match remainder.split_once(':') {
+                    Some((id_str, _)) => (id_str.trim(), ""),
+                    None => (remainder.trim(), ""),
+                };
+                if NodeId::is_valid(id_part) || is_attempted_node_id(id_part) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Returns true if content begins with YAML frontmatter fence `---`.
+pub fn has_frontmatter(content: &str) -> bool {
+    let trimmed_start = content.strip_prefix('\u{feff}').unwrap_or(content);
+    let mut line_iter = trimmed_start.split_inclusive('\n');
+    matches!(line_iter.next(), Some(line) if line.trim() == "---")
+}
+
 /// Parses Markdown specification content string into a structured `SpecDocument` AST.
 pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseError> {
     let (frontmatter, body_start_line) = parse_frontmatter(content, path)?;
