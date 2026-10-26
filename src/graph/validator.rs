@@ -444,9 +444,9 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
             }
         }
 
-        // Check if node has no parents, or if none of its parents exist in the graph
-        let has_resolved_parent = node.parents.iter().any(|p| graph.has_node(p));
-        if node.parents.is_empty() || !has_resolved_parent {
+        // Check if node has no declared parents.
+        // If it declares parent(s) that are missing, that was already recorded as a BrokenLink in Stage 1.
+        if node.parents.is_empty() {
             orphan_count += 1;
             orphan_ids.insert(&node.id);
             violations.push(ValidationViolation::OrphanNode {

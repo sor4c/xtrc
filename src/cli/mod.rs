@@ -54,7 +54,7 @@ pub struct Cli {
 /// Available subcommands for xtrc.
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize a new xtrc workspace with default configuration and directory scaffold.
+    /// Initialize a new xtrc workspace with default configuration and docs directory.
     Init {
         /// Target directory path to initialize (defaults to current directory).
         #[arg(short, long)]
