@@ -26,10 +26,15 @@ cat > "${OUTPUT_PATH}" <<EOF
 class Xtrc < Formula
   desc "Fast, plain-text traceability CLI and 7-layer DAG engine in Rust"
   homepage "https://github.com/${REPO}"
-  url "https://github.com/${REPO}/releases/download/${TAG}/${TARBALL_FILENAME}"
   version "${VERSION}"
-  sha256 "${SHA256}"
   license "MIT"
+
+  on_linux do
+    if Hardware::CPU.intel?
+      url "https://github.com/${REPO}/releases/download/${TAG}/${TARBALL_FILENAME}"
+      sha256 "${SHA256}"
+    end
+  end
 
   def install
     bin.install "xtrc"

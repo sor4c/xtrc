@@ -9,6 +9,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -123,14 +125,19 @@ jobs:
           if-no-files-found: error
 
       - name: Publish immutable versioned GitHub Release and update main-head pointer
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${XTRC_DELIVERY_VERSION}"
           VERSION_TAG="v${VERSION}"
           TITLE="xtrc ${VERSION}"
-          NOTES="Automated head-of-main delivery for version \`${VERSION}\` (commit \`${GITHUB_SHA}\`). Includes Homebrew formula (\`xtrc.rb\`), Debian package (\`xtrc_${VERSION}_amd64.deb\`), prebuilt Linux binary archive (\`xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\`), \`SHA256SUMS\`, CI/CD performance SLA report (\`perf-report.json\`), and SPDX 2.3 JSON SBOM (\`xtrc.spdx.json\`)."
+          NOTES="Automated delivery for version \`${VERSION}\` (commit \`${GITHUB_SHA}\`). Includes Homebrew formula (\`xtrc.rb\`), Debian package (\`xtrc_${VERSION}_amd64.deb\`), prebuilt Linux binary archive (\`xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\`), \`SHA256SUMS\`, CI/CD performance SLA report (\`perf-report.json\`), and SPDX 2.3 JSON SBOM (\`xtrc.spdx.json\`)."
+
+          IS_PRERELEASE="--prerelease"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]] && [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            IS_PRERELEASE=""
+          fi
 
           # 1. Create immutable versioned release v<VERSION> (never overwrite an existing version tag)
           if gh release view "${VERSION_TAG}" >/dev/null 2>&1; then
@@ -141,15 +148,17 @@ jobs:
             --title "${TITLE}" \
             --notes "${NOTES}" \
             --target "${GITHUB_SHA}" \
-            --prerelease
+            ${IS_PRERELEASE}
 
-          # 2. Refresh rolling 'main-head' convenience release so it contains only the current version's artifacts
-          if gh release view "main-head" >/dev/null 2>&1; then
-            gh release delete "main-head" --yes --cleanup-tag
+          # 2. Refresh rolling 'main-head' convenience release so it contains only the current version's artifacts on main
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            if gh release view "main-head" >/dev/null 2>&1; then
+              gh release delete "main-head" --yes --cleanup-tag
+            fi
+            gh release create "main-head" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+              --title "xtrc Head-of-Main (${VERSION})" \
+              --notes "${NOTES}" \
+              --target "${GITHUB_SHA}" \
+              --prerelease
           fi
-          gh release create "main-head" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
-            --title "xtrc Head-of-Main (${VERSION})" \
-            --notes "${NOTES}" \
-            --target "${GITHUB_SHA}" \
-            --prerelease
 
