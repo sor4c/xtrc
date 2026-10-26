@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::cli::output::{
     escape_csv_field, write_buffered_stdout, StreamEnvironment, UniversalEnvelope,
 };
-use crate::cli::pipeline::load_workspace_graph;
+use crate::cli::pipeline::load_workspace_graph_ext;
 use crate::error::CliError;
 use crate::graph::model::TraceabilityGraph;
 use crate::graph::validator::{validate_graph, ValidationOptions};
@@ -59,6 +59,8 @@ pub struct ExportOptions<'a> {
     pub format: String,
     /// Target file path to write. If omitted, emits to stdout.
     pub output: Option<PathBuf>,
+    /// Verbose diagnostic output.
+    pub verbose: bool,
 }
 
 impl<'a> Default for ExportOptions<'a> {
@@ -68,6 +70,7 @@ impl<'a> Default for ExportOptions<'a> {
             config_path: None,
             format: "markdown".to_string(),
             output: None,
+            verbose: false,
         }
     }
 }
@@ -111,9 +114,16 @@ pub fn run_export(options: ExportOptions<'_>) -> Result<(), CliError> {
 
     let format = ExportFormat::from_str(&options.format)?;
 
-    let (_root, _config, graph) = load_workspace_graph(options.root, options.config_path)?;
+    let (_root, config, graph) =
+        load_workspace_graph_ext(options.root, options.config_path, options.verbose)?;
 
-    let val_report = validate_graph(&graph, &ValidationOptions::default());
+    let val_report = validate_graph(
+        &graph,
+        &ValidationOptions {
+            require_test_coverage: config.validation.require_test_coverage,
+            ..Default::default()
+        },
+    );
 
     // Generate output content string according to selected format
     let content = match format {

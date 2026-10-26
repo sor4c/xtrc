@@ -32,6 +32,9 @@ pub fn discover_workspace(
     if let Some(cfg_path) = config_override {
         let config = WorkspaceConfig::load_from_file(cfg_path)?;
         let root = if let Some(r) = root_override {
+            if !r.is_dir() {
+                return Err(ConfigError::RootNotFound(r.to_path_buf()));
+            }
             r.to_path_buf()
         } else if let Some(parent) = cfg_path.parent() {
             if parent.as_os_str().is_empty() {
@@ -48,6 +51,9 @@ pub fn discover_workspace(
 
     // 2. Explicit root override
     if let Some(root_path) = root_override {
+        if !root_path.is_dir() {
+            return Err(ConfigError::RootNotFound(root_path.to_path_buf()));
+        }
         let candidate_config = root_path.join(".xtrc.toml");
         let config = if candidate_config.is_file() {
             WorkspaceConfig::load_from_file(&candidate_config)?
@@ -166,5 +172,15 @@ mod tests {
         assert_eq!(root, sub);
         assert_eq!(config.project.name, "xtrc");
         Ok(())
+    }
+
+    #[test]
+    fn test_root_override_nonexistent_returns_root_not_found() {
+        let nonexistent = Path::new("/nonexistent-xtrc-workspace-root-dir-123");
+        let result = discover_workspace(Path::new("."), Some(nonexistent), None);
+        match result {
+            Err(ConfigError::RootNotFound(p)) => assert_eq!(p, nonexistent),
+            other => panic!("Expected RootNotFound, got {other:?}"),
+        }
     }
 }

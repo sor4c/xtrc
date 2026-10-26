@@ -58,6 +58,15 @@ impl ConfigError {
     }
 }
 
+/// Formats a list of parse errors separated by newlines.
+pub fn format_multiple_errors(errors: &[ParseError]) -> String {
+    errors
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Domain errors encountered while parsing markdown specifications or code comments.
 #[derive(thiserror::Error, Debug)]
 pub enum ParseError {
@@ -92,12 +101,24 @@ pub enum ParseError {
         #[source]
         source: std::io::Error,
     },
+
+    /// Dispatched when multiple parse errors are collected across files or within a document.
+    #[error("Multiple parse errors:\n{}", format_multiple_errors(.0))]
+    Multiple(Vec<ParseError>),
 }
 
 impl ParseError {
     /// Returns the deterministic process exit code for this parse error.
     pub fn exit_code(&self) -> i32 {
         2
+    }
+
+    /// Returns a slice of individual parse errors.
+    pub fn errors(&self) -> &[ParseError] {
+        match self {
+            Self::Multiple(errs) => errs,
+            single => std::slice::from_ref(single),
+        }
     }
 }
 

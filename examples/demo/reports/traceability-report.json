@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "command": "export",
-  "timestamp": "2026-10-25T22:23:37Z",
+  "timestamp": "2026-10-26T13:42:06Z",
   "status": "pass",
   "statistics": {
     "total_nodes": 8,
@@ -27,7 +27,7 @@
       "children": [
         "US-DEMO-CHECKOUT"
       ],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:38",
+      "source_origin": "specs/checkout.md:38",
       "description": "- **ID**: EPIC-DEMO-PAY-ENGINE\n- **Parent**: STRAT-DEMO-RELIABILITY\n- **Type**: Epic\n- **Intent & Value**: Core transactional infrastructure handling tokenization, authorization, and double-entry ledger capture.\n- **Observable Contract & Behavior**: Provides unified APIs for tokenized checkout authentication and atomic ledger settlement.",
       "code_links": [],
       "test_links": []
@@ -42,7 +42,7 @@
       "children": [
         "SPEC-DEMO-AUTH-SVC"
       ],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:56",
+      "source_origin": "specs/checkout.md:56",
       "description": "- **ID**: REQ-DEMO-AUTH\n- **Parent**: US-DEMO-CHECKOUT\n- **Type**: Functional Requirement\n- **Intent & Value**: Validate ephemeral cryptograms and customer card tokens before initiating ledger transactions.\n- **Observable Contract & Behavior**: `validate_token()` parses token, validates TTL and HMAC signature, rejecting expired or tampered credentials with exit error.",
       "code_links": [
         "src/checkout.py:4",
@@ -64,7 +64,7 @@
       "children": [
         "SPEC-DEMO-CAPTURE-SVC"
       ],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:63",
+      "source_origin": "specs/checkout.md:63",
       "description": "- **ID**: REQ-DEMO-CAPTURE\n- **Parent**: US-DEMO-CHECKOUT\n- **Type**: Functional Requirement\n- **Intent & Value**: Guarantee double-entry debit and credit operations commit atomically without balance inconsistency.\n- **Observable Contract & Behavior**: `capture_transaction()` validates transaction idempotency and executes balanced double-entry ledger entries.",
       "code_links": [
         "src/ledger.rs:3",
@@ -84,7 +84,7 @@
         "REQ-DEMO-AUTH"
       ],
       "children": [],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:72",
+      "source_origin": "specs/checkout.md:72",
       "description": "- **ID**: SPEC-DEMO-AUTH-SVC\n- **Parent**: REQ-DEMO-AUTH\n- **Type**: TechnicalSpec\n- **Component Target**: src/checkout.py\n- **Verification Target**: tests/test_checkout.py\n- **Technical Specification**:\n  - Implements SHA-256 HMAC validation for ephemeral single-use payment tokens.\n  - Rejects tokens older than 300 seconds TTL.",
       "code_links": [
         "src/checkout.py:4",
@@ -104,7 +104,7 @@
         "REQ-DEMO-CAPTURE"
       ],
       "children": [],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:82",
+      "source_origin": "specs/checkout.md:82",
       "description": "- **ID**: SPEC-DEMO-CAPTURE-SVC\n- **Parent**: REQ-DEMO-CAPTURE\n- **Type**: TechnicalSpec\n- **Component Target**: src/ledger.rs\n- **Verification Target**: tests/test_ledger.rs\n- **Technical Specification**:\n  - Validates currency precision (ISO 4217 minor units).\n  - Enforces double-entry ledger equation: sum(debits) == sum(credits).",
       "code_links": [
         "src/ledger.rs:3",
@@ -126,7 +126,7 @@
       "children": [
         "EPIC-DEMO-PAY-ENGINE"
       ],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:29",
+      "source_origin": "specs/checkout.md:29",
       "description": "- **ID**: STRAT-DEMO-RELIABILITY\n- **Parent**: VIS-DEMO-PAY\n- **Type**: Strategy\n- **Intent & Value**: Maintain sub-100ms P99 payment latency while isolating all primary account numbers (PAN) via cryptographic tokenization.\n- **Observable Contract & Behavior**: Raw card numbers never enter application logs or unencrypted memory stores.",
       "code_links": [],
       "test_links": []
@@ -142,7 +142,7 @@
         "REQ-DEMO-AUTH",
         "REQ-DEMO-CAPTURE"
       ],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:47",
+      "source_origin": "specs/checkout.md:47",
       "description": "- **ID**: US-DEMO-CHECKOUT\n- **Parent**: EPIC-DEMO-PAY-ENGINE\n- **Type**: User Story\n- **Intent & Value**: As an e-commerce customer, I want to authenticate and authorize payments seamlessly with a single click so that my purchase completes instantly and securely.\n- **Observable Contract & Behavior**: Submits tokenized authorization payload and returns immutable transaction receipt.",
       "code_links": [],
       "test_links": []
@@ -155,7 +155,7 @@
       "children": [
         "STRAT-DEMO-RELIABILITY"
       ],
-      "source_origin": "/workspaces/xtrc/examples/demo/specs/checkout.md:21",
+      "source_origin": "specs/checkout.md:21",
       "description": "- **ID**: VIS-DEMO-PAY\n- **Type**: Vision\n- **Intent & Value**: Provide enterprise-grade cloud payment processing with zero friction for buyers, automated regulatory compliance, and provable end-to-end auditability.\n- **Observable Contract & Behavior**: End-to-end checkout processing executes under 100ms with 100% cryptographic transaction provenance.",
       "code_links": [],
       "test_links": []

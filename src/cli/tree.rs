@@ -8,7 +8,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::output::{write_buffered_stdout, StreamEnvironment, UniversalEnvelope};
-use crate::cli::pipeline::load_workspace_graph;
+use crate::cli::pipeline::load_workspace_graph_ext;
 use crate::error::{CliError, GraphError};
 use crate::graph::model::TraceabilityGraph;
 use crate::graph::validator::{validate_graph, ValidationOptions};
@@ -31,6 +31,8 @@ pub struct TreeOptions<'a> {
     pub depth: Option<usize>,
     /// Emit machine-parseable JSON tree to stdout.
     pub json: bool,
+    /// Verbose diagnostic output.
+    pub verbose: bool,
 }
 
 /// JSON representation of a node in the tree hierarchy.
@@ -78,7 +80,8 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
     // Probe stream environment and disable ANSI color codes when piped
     let _env = StreamEnvironment::probe();
 
-    let (_root, _config, graph) = load_workspace_graph(options.root, options.config_path)?;
+    let (_root, config, graph) =
+        load_workspace_graph_ext(options.root, options.config_path, options.verbose)?;
 
     // 1. Resolve anchor node if specified
     let starting_nodes: Vec<&TraceNode> = match options.id {
@@ -128,7 +131,13 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
             tree_nodes.push(json_node);
         }
 
-        let val_report = validate_graph(&graph, &ValidationOptions::default());
+        let val_report = validate_graph(
+            &graph,
+            &ValidationOptions {
+                require_test_coverage: config.validation.require_test_coverage,
+                ..Default::default()
+            },
+        );
         let status = if !cycle_detected && val_report.is_success(false) {
             "pass"
         } else {

@@ -158,6 +158,7 @@ fn test_nfr_perf_1000_file_workspace_sub_500ms() {
         &graph,
         &ValidationOptions {
             strict: true,
+            require_test_coverage: true,
             layer_filter: None,
             id_filter: None,
         },
@@ -327,6 +328,7 @@ fn test_nfr_scale_linear_dag_validation_and_prefilter_throughput() {
         &graph,
         &ValidationOptions {
             strict: true,
+            require_test_coverage: true,
             layer_filter: None,
             id_filter: None,
         },
@@ -360,6 +362,7 @@ fn test_nfr_determ_reproducible_parallel_execution() {
             &graph,
             &ValidationOptions {
                 strict: true,
+                require_test_coverage: true,
                 layer_filter: None,
                 id_filter: None,
             },
@@ -406,6 +409,7 @@ fn test_nfr_self_repository_verification_sub_200ms() {
         &graph,
         &ValidationOptions {
             strict: true,
+            require_test_coverage: true,
             layer_filter: None,
             id_filter: None,
         },

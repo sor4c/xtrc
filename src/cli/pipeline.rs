@@ -23,6 +23,15 @@ pub fn load_workspace_graph(
     root_override: Option<&Path>,
     config_override: Option<&Path>,
 ) -> Result<(PathBuf, WorkspaceConfig, TraceabilityGraph), CliError> {
+    load_workspace_graph_ext(root_override, config_override, false)
+}
+
+/// Extended loader supporting verbose diagnostic output to stderr.
+pub fn load_workspace_graph_ext(
+    root_override: Option<&Path>,
+    config_override: Option<&Path>,
+    verbose: bool,
+) -> Result<(PathBuf, WorkspaceConfig, TraceabilityGraph), CliError> {
     let start_dir = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(e) => return Err(CliError::Io(e)),
@@ -33,19 +42,107 @@ pub fn load_workspace_graph(
     let all_files = walk_workspace(&root, &config)?;
     let categorized = categorize_files(&root, &all_files, &config);
 
+    if verbose {
+        eprintln!(
+            "[INFO] Discovered files: {} specs, {} code, {} tests (traversed {} total files)",
+            categorized.specs.len(),
+            categorized.code.len(),
+            categorized.tests.len(),
+            all_files.len()
+        );
+    }
+
     let all_nodes: Vec<TraceNode> = if categorized.specs.len() <= 2 {
         let mut nodes = Vec::new();
+        let mut all_errors: Vec<ParseError> = Vec::new();
         for spec_file in &categorized.specs {
-            nodes.extend(parse_spec_file(spec_file)?);
+            let content = match std::fs::read_to_string(spec_file) {
+                Ok(c) => c,
+                Err(e) => return Err(CliError::Io(e)),
+            };
+            if !crate::parser::document::has_frontmatter(&content)
+                && !crate::parser::document::has_spec_headings(&content)
+            {
+                if verbose {
+                    eprintln!(
+                        "[INFO] Skipping non-spec Markdown file (no frontmatter or node headings): {}",
+                        spec_file.display()
+                    );
+                }
+                continue;
+            }
+            match parse_spec_file(spec_file) {
+                Ok(mut file_nodes) => {
+                    for node in &mut file_nodes {
+                        if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
+                            node.file_origin.path = rel_path.to_path_buf();
+                        }
+                    }
+                    nodes.extend(file_nodes);
+                }
+                Err(err) => match err {
+                    ParseError::Multiple(errs) => all_errors.extend(errs),
+                    single => all_errors.push(single),
+                },
+            }
+        }
+        if !all_errors.is_empty() {
+            if all_errors.len() == 1 {
+                return Err(CliError::Parse(all_errors.remove(0)));
+            } else {
+                return Err(CliError::Parse(ParseError::Multiple(all_errors)));
+            }
         }
         nodes
     } else {
-        let per_spec: Result<Vec<Vec<TraceNode>>, ParseError> = categorized
+        let per_spec: Vec<Result<Vec<TraceNode>, ParseError>> = categorized
             .specs
             .par_iter()
-            .map(|spec_file| parse_spec_file(spec_file))
+            .map(|spec_file| {
+                let content = std::fs::read_to_string(spec_file).map_err(|err| ParseError::Io {
+                    path: spec_file.to_path_buf(),
+                    source: err,
+                })?;
+                if !crate::parser::document::has_frontmatter(&content)
+                    && !crate::parser::document::has_spec_headings(&content)
+                {
+                    if verbose {
+                        eprintln!(
+                            "[INFO] Skipping non-spec Markdown file (no frontmatter or node headings): {}",
+                            spec_file.display()
+                        );
+                    }
+                    return Ok(Vec::new());
+                }
+                let mut file_nodes = parse_spec_file(spec_file)?;
+                for node in &mut file_nodes {
+                    if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
+                        node.file_origin.path = rel_path.to_path_buf();
+                    }
+                }
+                Ok(file_nodes)
+            })
             .collect();
-        per_spec?.into_iter().flatten().collect()
+
+        let mut nodes = Vec::new();
+        let mut all_errors: Vec<ParseError> = Vec::new();
+        for res in per_spec {
+            match res {
+                Ok(file_nodes) => nodes.extend(file_nodes),
+                Err(err) => match err {
+                    ParseError::Multiple(errs) => all_errors.extend(errs),
+                    single => all_errors.push(single),
+                },
+            }
+        }
+        if !all_errors.is_empty() {
+            if all_errors.len() == 1 {
+                return Err(CliError::Parse(all_errors.remove(0)));
+            } else {
+                return Err(CliError::Parse(ParseError::Multiple(all_errors)));
+            }
+        }
+        nodes
     };
 
     let mut all_links = Vec::new();
@@ -62,13 +159,6 @@ pub fn load_workspace_graph(
         Some(LinkKind::AutomatedTest),
     )?;
     all_links.extend(test_links);
-
-    // 3. Scan remaining un-categorized workspace text files (polyglot scripts, migrations, etc.)
-    // Categorized in O(N) during `categorize_files` without O(N^2) Vec::contains scans.
-    if !categorized.other.is_empty() {
-        let other_links = scan_workspace_comments(&categorized.other, Some(&root), None)?;
-        all_links.extend(other_links);
-    }
 
     let graph = TraceabilityGraph::build(all_nodes, all_links)?;
 

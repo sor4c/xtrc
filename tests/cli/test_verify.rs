@@ -193,3 +193,133 @@ fn test_check_json_output() {
     assert_eq!(val["schema_version"], "1.0.0");
     assert!(val.get("statistics").is_some());
 }
+
+#[test]
+fn test_unconfigured_files_like_readme_not_scanned_for_trace_links() {
+    let temp = tempdir().expect("tempdir");
+    setup_valid_workspace(temp.path());
+
+    // Add a README.md and a non-included script outside code.include / tests.include
+    std::fs::write(
+        temp.path().join("README.md"),
+        "# README\nExample snippet:\n```rust\n// @trace REQ-VERIFY-01\n```\n",
+    )
+    .expect("write readme");
+
+    std::fs::write(
+        temp.path().join("script.py"),
+        "# @trace REQ-VERIFY-01\nprint('hello')\n",
+    )
+    .expect("write script");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    let assert = cmd
+        .current_dir(temp.path())
+        .args(["check", "--json"])
+        .assert()
+        .success();
+
+    let output = assert.get_output();
+    let val: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    // src/lib.rs has 2 code links
+    // tests/test_verify.rs has 2 test links
+    // README.md and script.py must NOT add any links because they are outside configured globs
+    assert_eq!(val["statistics"]["code_links"], 2);
+    assert_eq!(val["statistics"]["test_links"], 2);
+}
+
+#[test]
+fn test_cli_argument_error_formatting() {
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.args(["--unknown-flag"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "error: unexpected argument '--unknown-flag'",
+        ));
+}
+
+#[test]
+fn test_check_empty_graph_warns_and_exits_zero() {
+    let temp = tempdir().expect("tempdir");
+    let config = r#"version = "1"
+[project]
+name = "empty-test"
+root = "."
+
+[specs]
+include = ["docs/**/*.md"]
+"#;
+    std::fs::write(temp.path().join(".xtrc.toml"), config).expect("write config");
+    std::fs::create_dir_all(temp.path().join("docs")).expect("create docs");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .arg("check")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "[WARN] Empty traceability graph: no specification nodes found matching spec include patterns: [docs/**/*.md]",
+        ));
+}
+
+#[test]
+fn test_check_empty_graph_strict_fails_with_exit_code_one() {
+    let temp = tempdir().expect("tempdir");
+    let config = r#"version = "1"
+[project]
+name = "empty-test"
+root = "."
+
+[specs]
+include = ["docs/**/*.md"]
+"#;
+    std::fs::write(temp.path().join(".xtrc.toml"), config).expect("write config");
+    std::fs::create_dir_all(temp.path().join("docs")).expect("create docs");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["check", "--strict"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "[ERROR] Empty traceability graph: no specification nodes found matching spec include patterns: [docs/**/*.md]",
+        ));
+}
+
+#[test]
+fn test_verbose_flag_prints_file_discovery_counts_to_stderr() {
+    let temp = tempdir().expect("tempdir");
+    setup_valid_workspace(temp.path());
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["-v", "check"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "[INFO] Discovered files: 1 specs, 1 code, 1 tests",
+        ));
+}
+
+#[test]
+fn test_non_spec_markdown_file_under_docs_is_skipped() {
+    let temp = tempdir().expect("tempdir");
+    setup_valid_workspace(temp.path());
+
+    // Write a regular guide markdown file under docs/ that has no frontmatter and no node headings
+    std::fs::write(
+        temp.path().join("docs/guide.md"),
+        "# Developer Guide\n\nThis is a standard markdown document explaining setup.\n\n## Section 1\nSome instructions.",
+    )
+    .expect("write guide");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["-v", "check"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "Skipping non-spec Markdown file (no frontmatter or node headings)",
+        ));
+}
