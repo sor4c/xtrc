@@ -192,6 +192,7 @@ where
             layer,
             id,
             quiet,
+            verbose: cli.verbose,
         }),
         Some(Commands::Matrix {
             format,
@@ -205,6 +206,7 @@ where
             uncovered,
             layer,
             json: json || cli.json,
+            verbose: cli.verbose,
         }),
         Some(Commands::Tree {
             id,
@@ -220,12 +222,14 @@ where
             down,
             depth,
             json: json || cli.json,
+            verbose: cli.verbose,
         }),
         Some(Commands::Export { format, output }) => export::run_export(export::ExportOptions {
             root: cli.root.as_deref(),
             config_path: cli.config.as_deref(),
             format,
             output,
+            verbose: cli.verbose,
         }),
         None => {
             let mut cmd = Cli::command();

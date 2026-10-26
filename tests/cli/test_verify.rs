@@ -286,3 +286,18 @@ include = ["docs/**/*.md"]
             "[ERROR] Empty traceability graph: no specification nodes found matching spec include patterns: [docs/**/*.md]",
         ));
 }
+
+#[test]
+fn test_verbose_flag_prints_file_discovery_counts_to_stderr() {
+    let temp = tempdir().expect("tempdir");
+    setup_valid_workspace(temp.path());
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["-v", "check"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "[INFO] Discovered files: 1 specs, 1 code, 1 tests",
+        ));
+}

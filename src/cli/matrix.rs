@@ -11,7 +11,7 @@ use crate::cli::output::{
     is_terminal_stdout, render_aligned_table, render_csv, render_markdown_table,
     write_buffered_stdout, MatrixFormat, StreamEnvironment, UniversalEnvelope,
 };
-use crate::cli::pipeline::load_workspace_graph;
+use crate::cli::pipeline::load_workspace_graph_ext;
 use crate::error::CliError;
 use crate::graph::validator::{validate_graph, ValidationOptions};
 use crate::model::Layer;
@@ -31,6 +31,8 @@ pub struct MatrixOptions<'a> {
     pub layer: Option<String>,
     /// Emit universal JSON matrix to stdout (alias for --format json).
     pub json: bool,
+    /// Verbose diagnostic output.
+    pub verbose: bool,
 }
 
 /// Structured row representation of a traceability matrix entry.
@@ -66,7 +68,8 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
     // Probe stream environment and disable ANSI color codes when piped
     let _env = StreamEnvironment::probe();
 
-    let (_root, config, graph) = load_workspace_graph(options.root, options.config_path)?;
+    let (_root, config, graph) =
+        load_workspace_graph_ext(options.root, options.config_path, options.verbose)?;
 
     // 1. Resolve target layer
     let target_layer = match options.layer {

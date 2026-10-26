@@ -23,6 +23,15 @@ pub fn load_workspace_graph(
     root_override: Option<&Path>,
     config_override: Option<&Path>,
 ) -> Result<(PathBuf, WorkspaceConfig, TraceabilityGraph), CliError> {
+    load_workspace_graph_ext(root_override, config_override, false)
+}
+
+/// Extended loader supporting verbose diagnostic output to stderr.
+pub fn load_workspace_graph_ext(
+    root_override: Option<&Path>,
+    config_override: Option<&Path>,
+    verbose: bool,
+) -> Result<(PathBuf, WorkspaceConfig, TraceabilityGraph), CliError> {
     let start_dir = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(e) => return Err(CliError::Io(e)),
@@ -32,6 +41,16 @@ pub fn load_workspace_graph(
 
     let all_files = walk_workspace(&root, &config)?;
     let categorized = categorize_files(&root, &all_files, &config);
+
+    if verbose {
+        eprintln!(
+            "[INFO] Discovered files: {} specs, {} code, {} tests (traversed {} total files)",
+            categorized.specs.len(),
+            categorized.code.len(),
+            categorized.tests.len(),
+            all_files.len()
+        );
+    }
 
     let all_nodes: Vec<TraceNode> = if categorized.specs.len() <= 2 {
         let mut nodes = Vec::new();
