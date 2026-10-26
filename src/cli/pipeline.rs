@@ -63,13 +63,6 @@ pub fn load_workspace_graph(
     )?;
     all_links.extend(test_links);
 
-    // 3. Scan remaining un-categorized workspace text files (polyglot scripts, migrations, etc.)
-    // Categorized in O(N) during `categorize_files` without O(N^2) Vec::contains scans.
-    if !categorized.other.is_empty() {
-        let other_links = scan_workspace_comments(&categorized.other, Some(&root), None)?;
-        all_links.extend(other_links);
-    }
-
     let graph = TraceabilityGraph::build(all_nodes, all_links)?;
 
     Ok((root, config, graph))

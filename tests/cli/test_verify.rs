@@ -193,3 +193,37 @@ fn test_check_json_output() {
     assert_eq!(val["schema_version"], "1.0.0");
     assert!(val.get("statistics").is_some());
 }
+
+#[test]
+fn test_unconfigured_files_like_readme_not_scanned_for_trace_links() {
+    let temp = tempdir().expect("tempdir");
+    setup_valid_workspace(temp.path());
+
+    // Add a README.md and a non-included script outside code.include / tests.include
+    std::fs::write(
+        temp.path().join("README.md"),
+        "# README\nExample snippet:\n```rust\n// @trace REQ-VERIFY-01\n```\n",
+    )
+    .expect("write readme");
+
+    std::fs::write(
+        temp.path().join("script.py"),
+        "# @trace REQ-VERIFY-01\nprint('hello')\n",
+    )
+    .expect("write script");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    let assert = cmd
+        .current_dir(temp.path())
+        .args(["check", "--json"])
+        .assert()
+        .success();
+
+    let output = assert.get_output();
+    let val: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    // src/lib.rs has 2 code links
+    // tests/test_verify.rs has 2 test links
+    // README.md and script.py must NOT add any links because they are outside configured globs
+    assert_eq!(val["statistics"]["code_links"], 2);
+    assert_eq!(val["statistics"]["test_links"], 2);
+}
