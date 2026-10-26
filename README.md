@@ -74,7 +74,7 @@ Traceability must work in both directions to provide true project integrity:
 
 ---
 
-## Planned Workflow
+## Planned Workflow & Developer Lifecycle
 
 `xtrc` seamlessly embeds into the standard developer lifecycle:
 
@@ -90,13 +90,27 @@ Traceability must work in both directions to provide true project integrity:
 ```
 
 ### Step 1: Capture Intent
-Define high-level product intent—vision, strategic goals, epics, and user stories—in version-controlled Markdown files or structured issue templates (`.github/ISSUE_TEMPLATE/`). Each requirement receives a unique identifier (e.g., `REQ-AUTH-01`).
+Define high-level product intent—vision, strategic goals, epics, user stories, and requirements—in version-controlled Markdown files matching configured include paths (e.g. `docs/**/*.md`). Specification documents require standard YAML frontmatter metadata:
+```markdown
+---
+document_type: requirements_specification
+id: REQ-SPEC-001
+title: Authentication & Session Specifications
+version: 1.0.0
+status: approved
+---
+
+### REQ-AUTH-01: Session Token Validation
+- **ID**: REQ-AUTH-01
+- **Parent**: EPIC-AUTH
+- **Type**: Requirement
+```
 
 ### Step 2: Derive Technical Specifications
 Derive technical specifications, architecture decisions (ADRs), and interface contracts that address the high-level requirements. Technical specs explicitly reference their parent requirement IDs.
 
 ### Step 3: Implement & Link in Code
-Implement features in idiomatic code, embedding lightweight traceability annotations directly in docstrings and comments:
+Implement features in idiomatic code across configured paths (`code.include`), embedding lightweight traceability annotations directly in docstrings and comments (`// @trace <ID>` or `# @trace <ID>`):
 ```rust
 // @trace REQ-AUTH-01
 // Implements token validation logic according to spec.
@@ -104,15 +118,24 @@ pub fn validate_session_token(token: &str) -> Result<Session, AuthError> {
     // ...
 }
 ```
+Automated tests matching `tests.include` or annotated with `// @trace:test <ID>` link verification back to specifications.
 
 ### Step 4: Verify Alignment Locally
-Before committing, run `xtrc check` or `xtrc verify` in your terminal. `xtrc` parses the repository, builds the relationship graph, and surfaces any orphaned code, unmapped requirements, or broken reference links in milliseconds.
+Before committing, run `xtrc check` or `xtrc verify` in your terminal. `xtrc` parses the repository, builds the relationship graph, and surfaces any orphaned code, unmapped requirements, or broken reference links in milliseconds:
 
 ```console
 $ xtrc check
-Scanning repository artifacts...
-Loaded: 12 requirements, 8 specs, 42 code links, 18 test links.
-[OK] Bidirectional traceability verified (100% coverage, 0 broken links).
+Total Nodes:          8
+Technical Specs:      2
+Requirements:         2
+Covered Reqs:         2
+Code Links:           4
+Test Links:           4
+Broken Links:         0
+Cycle Loops:          0
+Orphan Nodes:         0
+Coverage Rate:        100.0%
+Status:               PASS
 ```
 
 ### Step 5: Enforce in CI/CD Gates
