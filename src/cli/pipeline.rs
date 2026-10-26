@@ -36,14 +36,28 @@ pub fn load_workspace_graph(
     let all_nodes: Vec<TraceNode> = if categorized.specs.len() <= 2 {
         let mut nodes = Vec::new();
         for spec_file in &categorized.specs {
-            nodes.extend(parse_spec_file(spec_file)?);
+            let mut file_nodes = parse_spec_file(spec_file)?;
+            for node in &mut file_nodes {
+                if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
+                    node.file_origin.path = rel_path.to_path_buf();
+                }
+            }
+            nodes.extend(file_nodes);
         }
         nodes
     } else {
         let per_spec: Result<Vec<Vec<TraceNode>>, ParseError> = categorized
             .specs
             .par_iter()
-            .map(|spec_file| parse_spec_file(spec_file))
+            .map(|spec_file| {
+                let mut file_nodes = parse_spec_file(spec_file)?;
+                for node in &mut file_nodes {
+                    if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
+                        node.file_origin.path = rel_path.to_path_buf();
+                    }
+                }
+                Ok(file_nodes)
+            })
             .collect();
         per_spec?.into_iter().flatten().collect()
     };

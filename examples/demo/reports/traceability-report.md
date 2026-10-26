@@ -25,7 +25,7 @@
 - **Layer**: Vision
 - **Parents**: None
 - **Children**: STRAT-DEMO-RELIABILITY
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:21
+- **Source File**: specs/checkout.md:21
 
 - **ID**: VIS-DEMO-PAY
 - **Type**: Vision
@@ -40,7 +40,7 @@
 - **Layer**: Strategy
 - **Parents**: VIS-DEMO-PAY
 - **Children**: EPIC-DEMO-PAY-ENGINE
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:29
+- **Source File**: specs/checkout.md:29
 
 - **ID**: STRAT-DEMO-RELIABILITY
 - **Parent**: VIS-DEMO-PAY
@@ -56,7 +56,7 @@
 - **Layer**: Epic
 - **Parents**: STRAT-DEMO-RELIABILITY
 - **Children**: US-DEMO-CHECKOUT
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:38
+- **Source File**: specs/checkout.md:38
 
 - **ID**: EPIC-DEMO-PAY-ENGINE
 - **Parent**: STRAT-DEMO-RELIABILITY
@@ -72,7 +72,7 @@
 - **Layer**: UserStory
 - **Parents**: EPIC-DEMO-PAY-ENGINE
 - **Children**: REQ-DEMO-AUTH, REQ-DEMO-CAPTURE
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:47
+- **Source File**: specs/checkout.md:47
 
 - **ID**: US-DEMO-CHECKOUT
 - **Parent**: EPIC-DEMO-PAY-ENGINE
@@ -88,7 +88,7 @@
 - **Layer**: Requirement
 - **Parents**: US-DEMO-CHECKOUT
 - **Children**: SPEC-DEMO-AUTH-SVC
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:56
+- **Source File**: specs/checkout.md:56
 - **Implementation Links**: src/checkout.py:4, src/checkout.py:13
 - **Verification Links**: tests/test_checkout.py:4, tests/test_checkout.py:14, tests/test_checkout.py:27
 
@@ -104,7 +104,7 @@
 - **Layer**: Requirement
 - **Parents**: US-DEMO-CHECKOUT
 - **Children**: SPEC-DEMO-CAPTURE-SVC
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:63
+- **Source File**: specs/checkout.md:63
 - **Implementation Links**: src/ledger.rs:3, src/ledger.rs:22
 - **Verification Links**: tests/test_ledger.rs:3, tests/test_ledger.rs:11, tests/test_ledger.rs:30
 
@@ -122,7 +122,7 @@
 - **Layer**: TechnicalSpec
 - **Parents**: REQ-DEMO-AUTH
 - **Children**: None
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:72
+- **Source File**: specs/checkout.md:72
 - **Implementation Links**: src/checkout.py:4, src/checkout.py:13
 - **Verification Links**: tests/test_checkout.py:4, tests/test_checkout.py:14, tests/test_checkout.py:27
 
@@ -141,7 +141,7 @@
 - **Layer**: TechnicalSpec
 - **Parents**: REQ-DEMO-CAPTURE
 - **Children**: None
-- **Source File**: /workspaces/xtrc/examples/demo/specs/checkout.md:82
+- **Source File**: specs/checkout.md:82
 - **Implementation Links**: src/ledger.rs:3, src/ledger.rs:22
 - **Verification Links**: tests/test_ledger.rs:3, tests/test_ledger.rs:11, tests/test_ledger.rs:30
 
