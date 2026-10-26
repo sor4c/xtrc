@@ -111,9 +111,15 @@ pub fn run_export(options: ExportOptions<'_>) -> Result<(), CliError> {
 
     let format = ExportFormat::from_str(&options.format)?;
 
-    let (_root, _config, graph) = load_workspace_graph(options.root, options.config_path)?;
+    let (_root, config, graph) = load_workspace_graph(options.root, options.config_path)?;
 
-    let val_report = validate_graph(&graph, &ValidationOptions::default());
+    let val_report = validate_graph(
+        &graph,
+        &ValidationOptions {
+            require_test_coverage: config.validation.require_test_coverage,
+            ..Default::default()
+        },
+    );
 
     // Generate output content string according to selected format
     let content = match format {

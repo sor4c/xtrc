@@ -73,6 +73,7 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
     let is_strict = options.strict || config.validation.strict;
     let validation_options = ValidationOptions {
         strict: is_strict,
+        require_test_coverage: config.validation.require_test_coverage,
         layer_filter,
         id_filter,
     };

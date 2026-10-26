@@ -266,6 +266,7 @@ fn test_validation_layer_filter() {
 
     let opt_req = ValidationOptions {
         strict: true,
+        require_test_coverage: true,
         layer_filter: Some(Layer::Requirement),
         id_filter: None,
     };

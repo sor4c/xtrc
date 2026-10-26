@@ -350,14 +350,27 @@ impl ValidationReport {
 }
 
 /// Options configuring validation engine behavior.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationOptions {
     /// Elevate warnings and partial coverage to fatal errors (exit code 1).
     pub strict: bool,
+    /// Whether requirements must link to automated test cases for coverage.
+    pub require_test_coverage: bool,
     /// Optional filter to validate only nodes in a specific Layer.
     pub layer_filter: Option<Layer>,
     /// Optional filter to validate only the subgraph connected to `NodeId`.
     pub id_filter: Option<NodeId>,
+}
+
+impl Default for ValidationOptions {
+    fn default() -> Self {
+        Self {
+            strict: false,
+            require_test_coverage: true,
+            layer_filter: None,
+            id_filter: None,
+        }
+    }
 }
 
 /// Executes the 4-stage bidirectional validation engine against `graph`.
@@ -511,7 +524,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         let has_child_test = spec_children.iter().any(|s| graph.has_test_link(&s.id));
         let has_test = has_direct_test || has_child_test;
 
-        if !has_test {
+        if options.require_test_coverage && !has_test {
             violations.push(ValidationViolation::MissingTest {
                 id: req.id.clone(),
                 origin: req.file_origin.clone(),
@@ -522,7 +535,13 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
             });
         }
 
-        if has_code && has_test {
+        let is_fulfilled = if options.require_test_coverage {
+            has_code && has_test
+        } else {
+            has_code
+        };
+
+        if is_fulfilled {
             covered_nodes += 1;
         }
     }
@@ -640,7 +659,13 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
                 let has_test = graph.has_test_link(req_id)
                     || spec_children.iter().any(|s| graph.has_test_link(&s.id));
 
-                if has_code && has_test {
+                let is_req_fulfilled = if options.require_test_coverage {
+                    has_code && has_test
+                } else {
+                    has_code
+                };
+
+                if is_req_fulfilled {
                     covered_reqs += 1;
                 }
             }
@@ -893,6 +918,16 @@ mod tests {
         let rep_strict = graph.validate(true);
         assert_eq!(rep_strict.statistics.coverage_percent, 0.0);
         assert_eq!(rep_strict.exit_code(true), 1);
+
+        // When require_test_coverage = false, code without tests is covered
+        let rep_no_test_req = graph.validate_with_options(&ValidationOptions {
+            strict: true,
+            require_test_coverage: false,
+            ..Default::default()
+        });
+        assert_eq!(rep_no_test_req.statistics.coverage_percent, 100.0);
+        assert!(rep_no_test_req.is_success(true));
+        assert_eq!(rep_no_test_req.exit_code(true), 0);
     }
 
     #[test]
