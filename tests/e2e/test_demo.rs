@@ -108,7 +108,7 @@ fn test_demo_e2e_runner_script_and_reports() {
 
 #[test]
 // @trace:test REQ-VER-BUMP-PATCH, SPEC-VER-BUMP
-fn test_version_patch_bump_matches_0_1_1() {
+fn test_version_patch_bump_matches_0_1_2() {
     let output = Command::new("bash")
         .arg("scripts/compute-version.sh")
         .output()
@@ -116,7 +116,7 @@ fn test_version_patch_bump_matches_0_1_1() {
     assert!(output.status.success());
     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
     assert!(
-        version.starts_with("0.1.1"),
-        "Computed version should start with 0.1.1, got: {version}"
+        version.starts_with("0.1.2"),
+        "Computed version should start with 0.1.2, got: {version}"
     );
 }
