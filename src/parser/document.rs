@@ -373,6 +373,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
     let mut in_code_block = false;
     let mut current_node: Option<NodeBuilder<'_>> = None;
     let mut nodes: Vec<TraceNode> = Vec::new();
+    let mut errors: Vec<ParseError> = Vec::new();
 
     let start_idx = body_start_line.saturating_sub(1);
     for (line_idx, line) in trimmed_start.lines().enumerate().skip(start_idx) {
@@ -406,7 +407,10 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
             if hash_count == 1 || hash_count == 2 {
                 // Section break at H1 or H2: finalize current node if any
                 if let Some(builder) = current_node.take() {
-                    nodes.push(builder.finalize(path)?);
+                    match builder.finalize(path) {
+                        Ok(n) => nodes.push(n),
+                        Err(e) => errors.push(e),
+                    }
                 }
                 continue;
             }
@@ -420,11 +424,19 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
 
                 if NodeId::is_valid(id_part) {
                     if let Some(builder) = current_node.take() {
-                        nodes.push(builder.finalize(path)?);
+                        match builder.finalize(path) {
+                            Ok(n) => nodes.push(n),
+                            Err(e) => errors.push(e),
+                        }
                     }
 
-                    let node_id = NodeId::new(id_part)
-                        .map_err(|err| err.into_parse_error(path, line_number))?;
+                    let node_id = match NodeId::new(id_part) {
+                        Ok(id) => id,
+                        Err(err) => {
+                            errors.push(err.into_parse_error(path, line_number));
+                            continue;
+                        }
+                    };
 
                     current_node = Some(NodeBuilder {
                         id: node_id,
@@ -443,12 +455,13 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
                         Err(e) => e.to_string(),
                         Ok(()) => "Invalid identifier".to_string(),
                     };
-                    return Err(ParseError::GrammarViolation {
+                    errors.push(ParseError::GrammarViolation {
                         token: id_part.to_string(),
                         path: path.to_path_buf(),
                         line: line_number,
                         reason,
                     });
+                    continue;
                 } else {
                     // Regular markdown H3/H4 heading (e.g. `### 8.1 Forward Requirements...`)
                     if let Some(ref mut builder) = current_node {
@@ -465,7 +478,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
                 if key.eq_ignore_ascii_case("id") {
                     // Verify ID matches heading ID
                     if val != builder.id.as_str() {
-                        return Err(ParseError::GrammarViolation {
+                        errors.push(ParseError::GrammarViolation {
                             token: val.to_string(),
                             path: path.to_path_buf(),
                             line: line_number,
@@ -487,10 +500,15 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
                             if clean_part.is_empty() || clean_part.eq_ignore_ascii_case("none") {
                                 continue;
                             }
-                            let parent_id = NodeId::new(clean_part)
-                                .map_err(|err| err.into_parse_error(path, line_number))?;
-                            if !builder.parents.contains(&parent_id) {
-                                builder.parents.push(parent_id);
+                            match NodeId::new(clean_part) {
+                                Ok(parent_id) => {
+                                    if !builder.parents.contains(&parent_id) {
+                                        builder.parents.push(parent_id);
+                                    }
+                                }
+                                Err(err) => {
+                                    errors.push(err.into_parse_error(path, line_number));
+                                }
                             }
                         }
                     }
@@ -506,7 +524,18 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
     }
 
     if let Some(builder) = current_node.take() {
-        nodes.push(builder.finalize(path)?);
+        match builder.finalize(path) {
+            Ok(n) => nodes.push(n),
+            Err(e) => errors.push(e),
+        }
+    }
+
+    if !errors.is_empty() {
+        if errors.len() == 1 {
+            return Err(errors.remove(0));
+        } else {
+            return Err(ParseError::Multiple(errors));
+        }
     }
 
     Ok(SpecDocument {

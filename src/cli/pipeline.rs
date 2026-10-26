@@ -54,6 +54,7 @@ pub fn load_workspace_graph_ext(
 
     let all_nodes: Vec<TraceNode> = if categorized.specs.len() <= 2 {
         let mut nodes = Vec::new();
+        let mut all_errors: Vec<ParseError> = Vec::new();
         for spec_file in &categorized.specs {
             let content = match std::fs::read_to_string(spec_file) {
                 Ok(c) => c,
@@ -70,17 +71,31 @@ pub fn load_workspace_graph_ext(
                 }
                 continue;
             }
-            let mut file_nodes = parse_spec_file(spec_file)?;
-            for node in &mut file_nodes {
-                if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
-                    node.file_origin.path = rel_path.to_path_buf();
+            match parse_spec_file(spec_file) {
+                Ok(mut file_nodes) => {
+                    for node in &mut file_nodes {
+                        if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
+                            node.file_origin.path = rel_path.to_path_buf();
+                        }
+                    }
+                    nodes.extend(file_nodes);
                 }
+                Err(err) => match err {
+                    ParseError::Multiple(errs) => all_errors.extend(errs),
+                    single => all_errors.push(single),
+                },
             }
-            nodes.extend(file_nodes);
+        }
+        if !all_errors.is_empty() {
+            if all_errors.len() == 1 {
+                return Err(CliError::Parse(all_errors.remove(0)));
+            } else {
+                return Err(CliError::Parse(ParseError::Multiple(all_errors)));
+            }
         }
         nodes
     } else {
-        let per_spec: Result<Vec<Vec<TraceNode>>, ParseError> = categorized
+        let per_spec: Vec<Result<Vec<TraceNode>, ParseError>> = categorized
             .specs
             .par_iter()
             .map(|spec_file| {
@@ -108,7 +123,26 @@ pub fn load_workspace_graph_ext(
                 Ok(file_nodes)
             })
             .collect();
-        per_spec?.into_iter().flatten().collect()
+
+        let mut nodes = Vec::new();
+        let mut all_errors: Vec<ParseError> = Vec::new();
+        for res in per_spec {
+            match res {
+                Ok(file_nodes) => nodes.extend(file_nodes),
+                Err(err) => match err {
+                    ParseError::Multiple(errs) => all_errors.extend(errs),
+                    single => all_errors.push(single),
+                },
+            }
+        }
+        if !all_errors.is_empty() {
+            if all_errors.len() == 1 {
+                return Err(CliError::Parse(all_errors.remove(0)));
+            } else {
+                return Err(CliError::Parse(ParseError::Multiple(all_errors)));
+            }
+        }
+        nodes
     };
 
     let mut all_links = Vec::new();

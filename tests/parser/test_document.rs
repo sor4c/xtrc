@@ -1143,3 +1143,37 @@ status: approved
         );
     }
 }
+
+#[test]
+fn test_parser_collects_multiple_grammar_errors_in_document() {
+    let dummy_path = Path::new("docs/multi_error.md");
+    let content = r#"---
+document_type: custom_spec
+id: MULTI-SPEC-001
+title: Multi Error Spec
+version: 1.0.0
+status: approved
+---
+
+### REQ_BAD_UNDERSCORE: First Bad Node
+- **ID**: REQ_BAD_UNDERSCORE
+- **Parent**: None
+- **Type**: Requirement
+
+### REQ-BAD-PARENT: Second Bad Node
+- **ID**: REQ-BAD-PARENT
+- **Parent**: BAD_PARENT_UNDERSCORE
+- **Type**: Requirement
+
+### REQ-MISMATCH: Third Bad Node
+- **ID**: REQ-MISMATCH-DIFFERENT
+- **Parent**: None
+- **Type**: Requirement
+"#;
+
+    let err = parse_document(content, dummy_path).unwrap_err();
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.errors().len(), 3);
+    let err_str = err.to_string();
+    assert!(err_str.contains("Multiple parse errors:"));
+}
