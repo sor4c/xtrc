@@ -683,7 +683,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     ValidationReport {
         schema_version: "1.0.0".to_string(),
         command: "check".to_string(),
-        timestamp: "2026-10-25T00:00:00Z".to_string(),
+        timestamp: crate::cli::output::generate_utc_timestamp(),
         status: if is_pass {
             "pass".to_string()
         } else {

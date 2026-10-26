@@ -160,11 +160,21 @@ impl<T: Serialize> UniversalEnvelope<T> {
 }
 
 /// Generates an ISO 8601 UTC timestamp string without external chrono dependency.
+/// Respects `SOURCE_DATE_EPOCH` for reproducible, deterministic builds and outputs.
 pub fn generate_utc_timestamp() -> String {
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let now = if let Ok(epoch_str) = std::env::var("SOURCE_DATE_EPOCH") {
+        epoch_str.trim().parse::<u64>().unwrap_or_else(|_| {
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        })
+    } else {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    };
 
     let days = now / 86400;
     let seconds_of_day = now % 86400;
@@ -536,6 +546,15 @@ mod tests {
         assert_eq!(ts.len(), 20);
         assert!(ts.ends_with('Z'));
         assert_eq!(&ts[10..11], "T");
+    }
+
+    #[test]
+    fn test_utc_timestamp_respects_source_date_epoch() {
+        // 1700000000 = 2023-11-14T22:13:20Z
+        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
+        let ts = generate_utc_timestamp();
+        std::env::remove_var("SOURCE_DATE_EPOCH");
+        assert_eq!(ts, "2023-11-14T22:13:20Z");
     }
 
     #[test]
