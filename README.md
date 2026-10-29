@@ -191,29 +191,37 @@ If developing locally without Docker/Dev Containers, ensure you have:
 - **Cargo**: Rust's package manager and build system.
 
 ### Installation & Packaging
-Every verified push to `main` automatically runs the [Head-of-Main Delivery workflow](.github/workflows/delivery.yml), computes a unique monotonic version (`<MAJOR>.<MINOR>.<PATCH>-r<COMMIT_COUNT>.g<SHORT_SHA>`, e.g., `0.1.0-r25.g87a20ea`), publishes an immutable versioned release (`v<VERSION>`), and refreshes the [`main-head` GitHub Release](https://github.com/sor4c/xtrc/releases/tag/main-head):
+Every verified push to `main` automatically runs the [Head-of-Main Delivery workflow](.github/workflows/delivery.yml), computes a unique monotonic version (`<MAJOR>.<MINOR>.<PATCH>-r<COMMIT_COUNT>.g<SHORT_SHA>`, e.g., `0.1.0-r25.g87a20ea`), publishes an immutable versioned release (`v<VERSION>`), and refreshes the [`main-head` GitHub Release](https://github.com/sor4c/xtrc/releases/tag/main-head).
+
+| Platform | Release asset |
+|---|---|
+| Linux x86_64 | `xtrc-v<VERSION>-x86_64-unknown-linux-gnu.tar.gz` or `.deb` (`amd64`) |
+| Linux ARM64 | `xtrc-v<VERSION>-aarch64-unknown-linux-gnu.tar.gz` or `.deb` (`arm64`) |
+| macOS Intel | `xtrc-v<VERSION>-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `xtrc-v<VERSION>-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `xtrc-v<VERSION>-x86_64-pc-windows-msvc.zip` (also `.tar.gz` for cargo-binstall) |
+
+Download archives from the [`main-head` release](https://github.com/sor4c/xtrc/releases/tag/main-head) or a versioned release. Each archive contains the binary, README, license, and SPDX SBOM. Verify downloaded release assets against `SHA256SUMS`. The macOS binaries are unsigned and may require Gatekeeper approval on first launch; signing and notarization are not currently configured.
 
 ```bash
-# 1. Install via Homebrew (using the delivered xtrc.rb formula pinned to its immutable v<VERSION> release)
+# Install via Homebrew; the formula selects the Intel or Apple Silicon archive
 curl -fsSL https://github.com/sor4c/xtrc/releases/download/main-head/xtrc.rb -o /tmp/xtrc.rb
 brew install --formula /tmp/xtrc.rb
 
-# 2. Install Debian package (.deb) on Debian / Ubuntu
-DEB_URL="$(curl -fsSL https://api.github.com/repos/sor4c/xtrc/releases/tags/main-head | jq -r '.assets[] | select(.name | endswith(".deb")) | .browser_download_url')"
+# Install Debian package (.deb) on Debian / Ubuntu (amd64 or arm64)
+DEB_ARCH="$(dpkg --print-architecture)"
+DEB_URL="$(curl -fsSL https://api.github.com/repos/sor4c/xtrc/releases/tags/main-head | jq -r --arg arch "${DEB_ARCH}" '.assets[] | select(.name | endswith("_" + $arch + ".deb")) | .browser_download_url')"
 curl -fsSLO "${DEB_URL}"
-sudo dpkg -i xtrc_*_amd64.deb
+sudo dpkg -i "xtrc_"*"_${DEB_ARCH}.deb"
 
-# 3. Install prebuilt binary via cargo-binstall
+# Install the prebuilt binary via cargo-binstall
 cargo binstall xtrc
 
-# 4. Install portable archive (.tar.gz) directly
-TAR_URL="$(curl -fsSL https://api.github.com/repos/sor4c/xtrc/releases/tags/main-head | jq -r '.assets[] | select(.name | endswith(".tar.gz")) | .browser_download_url')"
-curl -fsSL "${TAR_URL}" | tar -xz
-sudo install -m 755 xtrc-v*/xtrc /usr/local/bin/xtrc
-
-# 5. Build and install from source via Cargo
+# Or build and install from source via Cargo
 cargo install --path .
 ```
+
+On Windows, download and extract the `.zip` for the target release, then run `xtrc.exe` from the extracted directory.
 
 ### Version Policy
 To guarantee that two head-of-`main` deliveries with different content **never** share the same version string:

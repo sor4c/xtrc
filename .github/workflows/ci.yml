@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - "**"
+    tags:
+      - 'v*'
   pull_request:
 
 permissions:
@@ -52,3 +54,46 @@ jobs:
           path: dist/perf-report.json
           if-no-files-found: error
 
+  platform-build:
+    name: Native Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify native target and build release binary
+        shell: bash
+        run: |
+          rustc -vV | grep -Fx "host: ${{ matrix.target }}"
+          cargo build --release --locked
+
+      - name: Smoke-test native binary
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            XTRC="target/release/xtrc.exe"
+          else
+            XTRC="target/release/xtrc"
+          fi
+          "${XTRC}" --version
+          "${XTRC}" --root examples/demo check --strict

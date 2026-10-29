@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 # @trace SPEC-CD-DELIVERY, REQ-PKG-DIST
-# Generates a Homebrew Formula (xtrc.rb) for the packaged xtrc release archive,
-# embedding the exact SHA-256 checksum and installing both the binary and SPDX SBOM.
+# Generates a Homebrew Formula with native Intel and Apple Silicon macOS archives.
 
 set -euo pipefail
 
-VERSION="${1:?Usage: generate-homebrew-formula.sh <version> <tarball_path> [output_path] [repo] [tag]}"
-TARBALL_PATH="${2:?Usage: generate-homebrew-formula.sh <version> <tarball_path> [output_path] [repo] [tag]}"
-OUTPUT_PATH="${3:-dist/xtrc.rb}"
-REPO="${4:-sor4c/xtrc}"
-TAG="${5:-main-head}"
+VERSION="${1:?Usage: generate-homebrew-formula.sh <version> <intel_tarball> <arm_tarball> [output_path] [repo] [tag]}"
+INTEL_TARBALL="${2:?Usage: generate-homebrew-formula.sh <version> <intel_tarball> <arm_tarball> [output_path] [repo] [tag]}"
+ARM_TARBALL="${3:?Usage: generate-homebrew-formula.sh <version> <intel_tarball> <arm_tarball> [output_path] [repo] [tag]}"
+OUTPUT_PATH="${4:-dist/xtrc.rb}"
+REPO="${5:-sor4c/xtrc}"
+TAG="${6:-main-head}"
 
-if [ ! -f "${TARBALL_PATH}" ]; then
-  echo "Error: tarball not found at '${TARBALL_PATH}'" >&2
+if [ ! -f "${INTEL_TARBALL}" ]; then
+  echo "Error: Intel macOS tarball not found at '${INTEL_TARBALL}'" >&2
+  exit 2
+fi
+
+if [ ! -f "${ARM_TARBALL}" ]; then
+  echo "Error: Apple Silicon macOS tarball not found at '${ARM_TARBALL}'" >&2
   exit 2
 fi
 
 mkdir -p "$(dirname "${OUTPUT_PATH}")"
 
-TARBALL_FILENAME="$(basename "${TARBALL_PATH}")"
-SHA256="$(sha256sum "${TARBALL_PATH}" | awk '{print $1}')"
+INTEL_FILENAME="$(basename "${INTEL_TARBALL}")"
+INTEL_SHA256="$(sha256sum "${INTEL_TARBALL}" | awk '{print $1}')"
+ARM_FILENAME="$(basename "${ARM_TARBALL}")"
+ARM_SHA256="$(sha256sum "${ARM_TARBALL}" | awk '{print $1}')"
 
 cat > "${OUTPUT_PATH}" <<EOF
 # @trace SPEC-CD-DELIVERY, REQ-PKG-DIST
@@ -29,11 +36,14 @@ class Xtrc < Formula
   version "${VERSION}"
   license "MIT"
 
-  on_linux do
-    if Hardware::CPU.intel?
-      url "https://github.com/${REPO}/releases/download/${TAG}/${TARBALL_FILENAME}"
-      sha256 "${SHA256}"
-    end
+  on_intel do
+    url "https://github.com/${REPO}/releases/download/${TAG}/${INTEL_FILENAME}"
+    sha256 "${INTEL_SHA256}"
+  end
+
+  on_arm do
+    url "https://github.com/${REPO}/releases/download/${TAG}/${ARM_FILENAME}"
+    sha256 "${ARM_SHA256}"
   end
 
   def install
