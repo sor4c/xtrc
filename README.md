@@ -155,6 +155,21 @@ Inspect the traceability graph on demand:
 - `xtrc export --format json`: Export machine-readable JSON compliance telemetry.
 - `xtrc export --format markdown`: Export compliance documentation in Markdown.
 
+### Configure the Layers You Use
+The built-in Vision-to-Technical-Specification hierarchy remains the default. To use a smaller
+traceability chain, declare the ordered specification layers in `.xtrc.toml`:
+
+```toml
+layers = [
+  { name = "Requirement", prefix = "REQ" },
+]
+```
+
+Layers are ordered from root to leaf; a node can reference a parent in any earlier layer. Code
+and test trace comments remain fixed leaf links. With this configuration, an unparented `REQ-*`
+node is a valid root and can be covered directly by `@trace` and `@trace:test` links. Matrix
+columns and tree labels use the configured layer names.
+
 ---
 
 ## Live End-to-End Demo & Example Setup

@@ -104,7 +104,7 @@ fn test_matrix_markdown_format() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "| Requirement ID | Title | Parent US | Specs | Code Links | Test Links | Status |",
+            "| Requirement ID | Title | Parent User Story | Child Technical Specification | Code Links | Test Links | Status |",
         ))
         .stdout(predicate::str::contains("| REQ-MATRIX-01 |"));
 }
@@ -120,11 +120,55 @@ fn test_matrix_csv_format() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Requirement ID,Title,Parent US,Specs,Code Links,Test Links,Status",
+            "Requirement ID,Title,Parent User Story,Child Technical Specification,Code Links,Test Links,Status",
         ))
         .stdout(predicate::str::contains(
             "REQ-MATRIX-01,Covered Requirement",
         ));
+}
+
+#[test]
+fn test_matrix_columns_follow_configured_layers() {
+    let temp = tempdir().expect("tempdir");
+    let config = r#"layers = [{ name = "Requirement", prefix = "REQ" }]
+[specs]
+include = ["docs/**/*.md"]
+[code]
+include = ["src/**/*.rs"]
+extensions = [".rs"]
+[tests]
+include = ["tests/**/*.rs"]
+"#;
+    std::fs::write(temp.path().join(".xtrc.toml"), config).expect("write config");
+    std::fs::create_dir_all(temp.path().join("docs")).expect("create docs");
+    std::fs::create_dir_all(temp.path().join("src")).expect("create src");
+    std::fs::create_dir_all(temp.path().join("tests")).expect("create tests");
+    std::fs::write(
+        temp.path().join("docs/req.md"),
+        r#"---
+document_type: requirements_specification
+id: REQ-SPEC-001
+title: Requirements
+version: 1.0.0
+status: approved
+---
+
+### REQ-01: One requirement
+- **Type**: Requirement
+- **Parent**: None
+"#,
+    )
+    .expect("write requirement");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["matrix", "--format", "markdown"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "| Requirement ID | Title | Parents | Children | Code Links | Test Links | Status |",
+        ))
+        .stdout(predicate::str::contains("Parent US").not());
 }
 
 #[test]

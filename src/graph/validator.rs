@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::graph::cycle::detect_cycles;
 use crate::graph::model::TraceabilityGraph;
-use crate::model::{FileOrigin, Layer, LinkKind, NodeId, TraceNode};
+use crate::model::{FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceNode};
 
 /// Severity level of a validation violation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -217,11 +217,11 @@ impl ValidationViolation {
 pub struct ValidationStats {
     /// Total count of specification nodes across Layers 1-6.
     pub total_nodes: usize,
-    /// Total count of technical specification nodes (Layer 6).
+    /// Total count of nodes in the layer directly below the coverage layer, if configured.
     pub specs_count: usize,
-    /// Total count of requirement nodes (Layer 5).
+    /// Total count of nodes in the configured coverage layer.
     pub requirements_count: usize,
-    /// Total count of requirements fulfilled by both code and tests.
+    /// Total count of coverage-layer nodes fulfilled by code and tests.
     pub covered_nodes: usize,
     /// Total count of source code implementation links.
     pub code_links: usize,
@@ -338,6 +338,52 @@ impl ValidationReport {
         )
     }
 
+    /// Formats a terminal summary using the configured layer names.
+    pub fn format_terminal_summary_for_layers(&self, layers: &LayerModel) -> String {
+        if layers.is_default() {
+            return self.format_terminal_summary();
+        }
+
+        let coverage_index = layers.coverage_index();
+        let coverage_name = layers
+            .layer_at(coverage_index)
+            .and_then(|layer| layers.name_for_layer(layer))
+            .unwrap_or("Coverage");
+        let spec_count = layers
+            .layer_at(coverage_index + 1)
+            .and_then(|layer| layers.name_for_layer(layer))
+            .map(|name| format!("{name} Nodes:        {}\n", self.statistics.specs_count))
+            .unwrap_or_default();
+
+        format!(
+            "Total Nodes:          {}\n\
+             {coverage_name} Nodes:        {}\n\
+             Covered Nodes:        {}\n\
+             {spec_count}\
+             Code Links:           {}\n\
+             Test Links:           {}\n\
+             Broken Links:         {}\n\
+             Cycle Loops:          {}\n\
+             Orphan Nodes:         {}\n\
+             Coverage Rate:        {:.1}%\n\
+             Status:               {}",
+            self.statistics.total_nodes,
+            self.statistics.requirements_count,
+            self.statistics.covered_nodes,
+            self.statistics.code_links,
+            self.statistics.test_links,
+            self.statistics.broken_links,
+            self.statistics.cycles_count,
+            self.statistics.orphan_nodes,
+            self.statistics.coverage_percent,
+            if self.status == "pass" {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+        )
+    }
+
     /// Formats diagnostic lines for stderr.
     pub fn format_diagnostics_stderr(&self, strict: bool) -> String {
         let mut out = String::new();
@@ -354,12 +400,14 @@ impl ValidationReport {
 pub struct ValidationOptions {
     /// Elevate warnings and partial coverage to fatal errors (exit code 1).
     pub strict: bool,
-    /// Whether requirements must link to automated test cases for coverage.
+    /// Whether nodes in the coverage layer must link to automated test cases.
     pub require_test_coverage: bool,
     /// Optional filter to validate only nodes in a specific Layer.
     pub layer_filter: Option<Layer>,
     /// Optional filter to validate only the subgraph connected to `NodeId`.
     pub id_filter: Option<NodeId>,
+    /// Ordered hierarchy used for root, requirement, and specification layers.
+    pub layer_model: LayerModel,
 }
 
 impl Default for ValidationOptions {
@@ -369,6 +417,7 @@ impl Default for ValidationOptions {
             require_test_coverage: true,
             layer_filter: None,
             id_filter: None,
+            layer_model: LayerModel::default(),
         }
     }
 }
@@ -376,6 +425,11 @@ impl Default for ValidationOptions {
 /// Executes the 4-stage bidirectional validation engine against `graph`.
 pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) -> ValidationReport {
     let mut violations: Vec<ValidationViolation> = Vec::new();
+    let coverage_index = options.layer_model.coverage_index();
+    let coverage_layer = options.layer_model.layer_at(coverage_index);
+    let spec_layer = (coverage_index + 1 < options.layer_model.layers.len())
+        .then(|| options.layer_model.layer_at(coverage_index + 1))
+        .flatten();
 
     // -------------------------------------------------------------------------
     // STAGE 1: Broken Links (Referential Integrity)
@@ -455,7 +509,9 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
                 origin: node.file_origin.clone(),
                 message: format!(
                     "Orphan node '{}' ({}) at {}: non-root specification item lacks parent justification",
-                    node.id, node.layer, node.file_origin
+                    node.id,
+                    display_layer_name(&options.layer_model, node.layer),
+                    node.file_origin
                 ),
             });
         }
@@ -466,7 +522,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     // -------------------------------------------------------------------------
     let mut req_nodes: Vec<&TraceNode> = graph
         .all_nodes()
-        .filter(|n| n.layer == Layer::Requirement)
+        .filter(|n| Some(n.layer) == coverage_layer)
         .collect();
 
     // If id_filter is set, scope requirements to connected subgraph in O(V + E)
@@ -488,17 +544,23 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         let spec_children: Vec<&TraceNode> = children
             .iter()
             .filter_map(|id| graph.get_node(id))
-            .filter(|n| n.layer == Layer::TechnicalSpec)
+            .filter(|n| Some(n.layer) == spec_layer)
             .collect();
 
         // 3a. Child Spec Check
-        if spec_children.is_empty() {
+        if spec_layer.is_some() && spec_children.is_empty() {
+            let coverage_name = coverage_layer
+                .map(|layer| display_layer_name(&options.layer_model, layer))
+                .unwrap_or("Requirement");
+            let spec_name = spec_layer
+                .and_then(|layer| options.layer_model.name_for_layer(layer))
+                .unwrap_or("Technical Specification");
             violations.push(ValidationViolation::MissingSpec {
                 id: req.id.clone(),
                 origin: req.file_origin.clone(),
                 message: format!(
-                    "Requirement '{}' at {} lacks child Technical Specification",
-                    req.id, req.file_origin
+                    "{} '{}' at {} lacks child {}",
+                    coverage_name, req.id, req.file_origin, spec_name
                 ),
             });
         }
@@ -509,12 +571,15 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         let has_code = has_direct_code || has_child_code;
 
         if !has_code {
+            let coverage_name = coverage_layer
+                .map(|layer| display_layer_name(&options.layer_model, layer))
+                .unwrap_or("Requirement");
             violations.push(ValidationViolation::MissingCode {
                 id: req.id.clone(),
                 origin: req.file_origin.clone(),
                 message: format!(
-                    "Requirement '{}' at {} missing source code implementation",
-                    req.id, req.file_origin
+                    "{} '{}' at {} missing source code implementation",
+                    coverage_name, req.id, req.file_origin
                 ),
             });
         }
@@ -525,12 +590,15 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         let has_test = has_direct_test || has_child_test;
 
         if options.require_test_coverage && !has_test {
+            let coverage_name = coverage_layer
+                .map(|layer| display_layer_name(&options.layer_model, layer))
+                .unwrap_or("Requirement");
             violations.push(ValidationViolation::MissingTest {
                 id: req.id.clone(),
                 origin: req.file_origin.clone(),
                 message: format!(
-                    "Requirement '{}' at {} missing automated test verification",
-                    req.id, req.file_origin
+                    "{} '{}' at {} missing automated test verification",
+                    coverage_name, req.id, req.file_origin
                 ),
             });
         }
@@ -569,8 +637,10 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
                 layer: node.layer,
                 origin: node.file_origin.clone(),
                 message: format!(
-                    "Node '{}' ({}) at {} has no directed provenance path to a Vision root",
-                    node.id, node.layer, node.file_origin
+                    "Node '{}' ({}) at {} has no directed provenance path to a root layer",
+                    node.id,
+                    display_layer_name(&options.layer_model, node.layer),
+                    node.file_origin
                 ),
             });
         }
@@ -592,7 +662,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
 
     let specs_count = graph
         .all_nodes()
-        .filter(|n| n.layer == Layer::TechnicalSpec)
+        .filter(|n| Some(n.layer) == spec_layer)
         .count();
 
     let code_links = graph
@@ -632,14 +702,17 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
 
     // Calculate per-epic coverage
     let mut epic_coverage: Vec<EpicCoverage> = Vec::new();
-    for epic in graph.all_nodes().filter(|n| n.layer == Layer::Epic) {
+    let summary_layer = coverage_index
+        .checked_sub(2)
+        .and_then(|index| options.layer_model.layer_at(index));
+    for epic in graph.all_nodes().filter(|n| Some(n.layer) == summary_layer) {
         let descendant_reqs: Vec<NodeId> = graph
             .descendants_of(&epic.id)
             .into_iter()
             .filter(|id| {
                 graph
                     .get_node(id)
-                    .is_some_and(|n| n.layer == Layer::Requirement)
+                    .is_some_and(|n| Some(n.layer) == coverage_layer)
             })
             .collect();
 
@@ -651,7 +724,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
                     .children_of(req_id)
                     .iter()
                     .filter_map(|id| graph.get_node(id))
-                    .filter(|n| n.layer == Layer::TechnicalSpec)
+                    .filter(|n| Some(n.layer) == spec_layer)
                     .collect();
 
                 let has_code = graph.has_code_link(req_id)
@@ -692,6 +765,14 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         statistics: stats,
         violations,
         epic_coverage,
+    }
+}
+
+fn display_layer_name(model: &LayerModel, layer: Layer) -> &str {
+    if model.is_default() {
+        layer.as_str()
+    } else {
+        model.name_for_layer(layer).unwrap_or(layer.as_str())
     }
 }
 

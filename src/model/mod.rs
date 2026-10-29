@@ -9,7 +9,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 pub use identifier::{validate_parent_relationship, IdError, NodeId, NODE_ID_REGEX_PATTERN};
 
@@ -18,32 +18,43 @@ pub use identifier::{validate_parent_relationship, IdError, NodeId, NODE_ID_REGE
 /// Order reflects upward justification and downward decomposition:
 /// Vision (1) -> Strategy (2) -> Epic (3) -> UserStory (4) -> Requirement (5)
 /// -> TechnicalSpec (6) -> SourceCode (7) & AutomatedTest (8).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Layer {
     /// Layer 1: High-level product vision and North Star principles.
-    Vision = 1,
+    Vision,
     /// Layer 2: Strategic themes and initiatives realizing Vision.
-    Strategy = 2,
+    Strategy,
     /// Layer 3: Epics decomposing strategic themes into deliverable milestones.
-    Epic = 3,
+    Epic,
     /// Layer 4: User stories describing user persona value.
-    UserStory = 4,
+    UserStory,
     /// Layer 5: Functional and non-functional requirements.
-    Requirement = 5,
+    Requirement,
     /// Layer 6: Technical specifications detailing architectural realization.
-    TechnicalSpec = 6,
+    TechnicalSpec,
     /// Layer 7a: Source code implementation links.
-    SourceCode = 7,
+    SourceCode,
     /// Layer 7b: Automated verification test links.
-    AutomatedTest = 8,
+    AutomatedTest,
+    /// A position in a user-declared hierarchy.
+    Custom(u16),
 }
 
 impl Layer {
-    /// Returns the integer rank (1 to 8) representing the hierarchy order.
+    /// Returns the rank representing the hierarchy order.
     #[inline]
-    pub fn rank(&self) -> u8 {
-        *self as u8
+    pub fn rank(&self) -> u16 {
+        match self {
+            Layer::Vision => 1,
+            Layer::Strategy => 2,
+            Layer::Epic => 3,
+            Layer::UserStory => 4,
+            Layer::Requirement => 5,
+            Layer::TechnicalSpec => 6,
+            Layer::SourceCode => 7,
+            Layer::AutomatedTest => 8,
+            Layer::Custom(rank) => *rank,
+        }
     }
 
     /// Returns the canonical display name of the layer.
@@ -58,6 +69,7 @@ impl Layer {
             Layer::TechnicalSpec => "TechnicalSpec",
             Layer::SourceCode => "SourceCode",
             Layer::AutomatedTest => "AutomatedTest",
+            Layer::Custom(_) => "Custom",
         }
     }
 
@@ -72,6 +84,7 @@ impl Layer {
             Layer::Requirement => Some("REQ"),
             Layer::TechnicalSpec => Some("SPEC"),
             Layer::SourceCode | Layer::AutomatedTest => None,
+            Layer::Custom(_) => None,
         }
     }
 
@@ -88,10 +101,10 @@ impl Layer {
         }
     }
 
-    /// Returns true if this layer is the root layer (Vision), which has no parents.
+    /// Returns true if this layer is the first position in its hierarchy.
     #[inline]
     pub fn is_root(&self) -> bool {
-        matches!(self, Layer::Vision)
+        matches!(self, Layer::Vision | Layer::Custom(1))
     }
 
     /// Returns true if this layer is a leaf layer (SourceCode or AutomatedTest).
@@ -100,33 +113,31 @@ impl Layer {
         matches!(self, Layer::SourceCode | Layer::AutomatedTest)
     }
 
-    /// Returns true if this layer represents a specification document node (Layers 1-6).
+    /// Returns true if this layer represents a specification document node rather than a leaf link.
     #[inline]
     pub fn is_specification(&self) -> bool {
         !self.is_leaf()
     }
 
-    /// Returns the slice of allowed parent layers for nodes residing in this layer.
-    ///
-    /// - Vision: No parents allowed.
-    /// - Strategy: Only Vision.
-    /// - Epic: Only Strategy.
-    /// - UserStory: Only Epic.
-    /// - Requirement: Only UserStory.
-    /// - TechnicalSpec: Requirement or UserStory.
-    /// - SourceCode: TechnicalSpec or Requirement.
-    /// - AutomatedTest: TechnicalSpec, Requirement, or UserStory.
-    pub fn allowed_parent_layers(&self) -> &'static [Layer] {
-        match self {
-            Layer::Vision => &[],
-            Layer::Strategy => &[Layer::Vision],
-            Layer::Epic => &[Layer::Strategy],
-            Layer::UserStory => &[Layer::Epic],
-            Layer::Requirement => &[Layer::UserStory],
-            Layer::TechnicalSpec => &[Layer::Requirement, Layer::UserStory],
-            Layer::SourceCode => &[Layer::TechnicalSpec, Layer::Requirement],
-            Layer::AutomatedTest => &[Layer::TechnicalSpec, Layer::Requirement, Layer::UserStory],
-        }
+    /// Returns every higher specification layer that may parent this layer.
+    pub fn allowed_parent_layers(&self) -> Vec<Layer> {
+        let last_specification_rank = if self.is_leaf() {
+            6
+        } else {
+            self.rank().saturating_sub(1)
+        };
+        (1..=last_specification_rank)
+            .map(|rank| match (self, rank) {
+                (Layer::Custom(_), rank) => Layer::Custom(rank),
+                (_, 1) => Layer::Vision,
+                (_, 2) => Layer::Strategy,
+                (_, 3) => Layer::Epic,
+                (_, 4) => Layer::UserStory,
+                (_, 5) => Layer::Requirement,
+                (_, 6) => Layer::TechnicalSpec,
+                _ => Layer::Custom(rank),
+            })
+            .collect()
     }
 
     /// Returns true if `parent_layer` is permitted as a parent for a node in `self`.
@@ -136,9 +147,26 @@ impl Layer {
     }
 }
 
+impl PartialOrd for Layer {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Layer {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.rank()
+            .cmp(&other.rank())
+            .then_with(|| matches!(self, Layer::Custom(_)).cmp(&matches!(other, Layer::Custom(_))))
+    }
+}
+
 impl fmt::Display for Layer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
+        match self {
+            Layer::Custom(rank) => write!(f, "Layer{rank}"),
+            _ => write!(f, "{}", self.as_str()),
+        }
     }
 }
 
@@ -147,6 +175,13 @@ impl FromStr for Layer {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let normalized = s.to_ascii_lowercase().replace(['-', '_', ' '], "");
+        if let Some(rank) = normalized.strip_prefix("layer") {
+            if let Ok(rank) = rank.parse::<u16>() {
+                if rank > 0 && rank < u16::MAX - 1 {
+                    return Ok(Layer::Custom(rank));
+                }
+            }
+        }
         match normalized.as_str() {
             "vision" | "vis" | "1" => Ok(Layer::Vision),
             "strategy" | "strat" | "2" => Ok(Layer::Strategy),
@@ -158,6 +193,25 @@ impl FromStr for Layer {
             "automatedtest" | "test" | "tests" | "8" => Ok(Layer::AutomatedTest),
             _ => Err(IdError::InvalidLayer(s.to_string())),
         }
+    }
+}
+
+impl Serialize for Layer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Layer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Layer::from_str(&value).map_err(de::Error::custom)
     }
 }
 
@@ -206,6 +260,219 @@ impl FromStr for LinkKind {
             "source_code" | "code" | "src" => Ok(LinkKind::SourceCode),
             "automated_test" | "test" | "tests" => Ok(LinkKind::AutomatedTest),
             _ => Err(IdError::InvalidLinkKind(s.to_string())),
+        }
+    }
+}
+
+/// A user-configurable traceability layer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayerDefinition {
+    /// Human-readable layer name.
+    pub name: String,
+    /// Uppercase identifier prefix assigned to this layer.
+    pub prefix: String,
+}
+
+/// Ordered specification layers used to classify identifiers and define parent edges.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LayerModel {
+    /// Layers ordered from root to leaf, excluding code and test link kinds.
+    pub layers: Vec<LayerDefinition>,
+}
+
+impl LayerModel {
+    /// Returns true if this model exactly matches the built-in layer definitions.
+    pub fn is_default(&self) -> bool {
+        const DEFAULT_LAYERS: [(&str, &str); 6] = [
+            ("Vision", "VIS"),
+            ("Strategy", "STRAT"),
+            ("Epic", "EPIC"),
+            ("User Story", "US"),
+            ("Requirement", "REQ"),
+            ("Technical Specification", "SPEC"),
+        ];
+        self.layers.len() == DEFAULT_LAYERS.len()
+            && self
+                .layers
+                .iter()
+                .zip(DEFAULT_LAYERS)
+                .all(|(layer, (name, prefix))| layer.name == name && layer.prefix == prefix)
+    }
+
+    /// Returns the configured layer index used for requirement coverage.
+    ///
+    /// The default model keeps its historical Requirement layer. Other models
+    /// prefer a layer named Requirement or using the `REQ` prefix, then fall
+    /// back to the final configured layer.
+    pub fn coverage_index(&self) -> usize {
+        self.layers
+            .iter()
+            .position(|layer| {
+                layer.prefix == "REQ"
+                    || matches!(
+                        layer
+                            .name
+                            .chars()
+                            .filter(|character| character.is_ascii_alphanumeric())
+                            .collect::<String>()
+                            .to_ascii_lowercase()
+                            .as_str(),
+                        "req" | "requirement" | "requirements"
+                    )
+            })
+            .unwrap_or_else(|| self.layers.len().saturating_sub(1))
+    }
+
+    /// Returns the configured layer for an identifier prefix.
+    pub fn layer_for_prefix(&self, prefix: &str) -> Option<Layer> {
+        self.layers
+            .iter()
+            .position(|layer| layer.prefix == prefix)
+            .and_then(|index| self.layer_at(index))
+    }
+
+    /// Returns a configured layer by its name or prefix.
+    pub fn parse_layer(&self, value: &str) -> Option<Layer> {
+        self.layers
+            .iter()
+            .position(|layer| {
+                layer.name.eq_ignore_ascii_case(value) || layer.prefix.eq_ignore_ascii_case(value)
+            })
+            .and_then(|index| self.layer_at(index))
+    }
+
+    /// Returns a configured layer's display name, if it belongs to this model.
+    pub fn name_for_layer(&self, layer: Layer) -> Option<&str> {
+        if self.is_default() {
+            return self
+                .layer_for_prefix(layer.prefix()?)
+                .filter(|configured| *configured == layer)
+                .map(|_| layer.as_str());
+        }
+        self.layers
+            .get(usize::from(layer.rank()).checked_sub(1)?)
+            .map(|definition| definition.name.as_str())
+    }
+
+    /// Returns every configured parent layer permitted for a node at `layer`.
+    ///
+    /// Code and test leaf kinds may link directly to any configured specification layer.
+    pub fn allowed_parent_layers(&self, layer: Layer) -> Vec<Layer> {
+        if layer == Layer::SourceCode || layer == Layer::AutomatedTest {
+            return (0..self.layers.len())
+                .filter_map(|index| self.layer_at(index))
+                .collect();
+        }
+        let Some(index) = self
+            .layers
+            .iter()
+            .enumerate()
+            .find_map(|(index, _)| (self.layer_at(index) == Some(layer)).then_some(index))
+        else {
+            return Vec::new();
+        };
+        (0..index)
+            .filter_map(|parent_index| self.layer_at(parent_index))
+            .collect()
+    }
+
+    /// Returns true if `parent` is an earlier configured specification layer than `child`.
+    pub fn can_have_parent_layer(&self, child: Layer, parent: Layer) -> bool {
+        self.allowed_parent_layers(child).contains(&parent)
+    }
+
+    /// Returns the layer at a zero-based index.
+    pub fn layer_at(&self, index: usize) -> Option<Layer> {
+        if self.is_default() {
+            return match index {
+                0 => Some(Layer::Vision),
+                1 => Some(Layer::Strategy),
+                2 => Some(Layer::Epic),
+                3 => Some(Layer::UserStory),
+                4 => Some(Layer::Requirement),
+                5 => Some(Layer::TechnicalSpec),
+                _ => None,
+            };
+        }
+        u16::try_from(index.checked_add(1)?)
+            .ok()
+            .filter(|rank| *rank < u16::MAX - 1)
+            .map(Layer::Custom)
+    }
+
+    /// Returns a concise list of valid prefixes for diagnostics.
+    pub fn valid_prefixes(&self) -> String {
+        self.layers
+            .iter()
+            .map(|layer| layer.prefix.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Validates layer names, prefixes, and hierarchy size.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.layers.is_empty() {
+            return Err("at least one layer must be configured".to_string());
+        }
+        if self.layers.len() >= usize::from(u16::MAX - 1) {
+            return Err("the configured layer hierarchy is too large".to_string());
+        }
+        let mut names = std::collections::BTreeSet::new();
+        let mut prefixes = std::collections::BTreeSet::new();
+        for layer in &self.layers {
+            if layer.name.trim().is_empty() {
+                return Err("layer names cannot be empty".to_string());
+            }
+            if layer.prefix.len() < 2
+                || !layer.prefix.as_bytes()[0].is_ascii_uppercase()
+                || !layer
+                    .prefix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+            {
+                return Err(format!("invalid layer prefix '{}'", layer.prefix));
+            }
+            if !names.insert(layer.name.to_ascii_lowercase()) {
+                return Err(format!("duplicate layer name '{}'", layer.name));
+            }
+            if !prefixes.insert(layer.prefix.as_str()) {
+                return Err(format!("duplicate layer prefix '{}'", layer.prefix));
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Default for LayerModel {
+    fn default() -> Self {
+        Self {
+            layers: vec![
+                LayerDefinition {
+                    name: "Vision".to_string(),
+                    prefix: "VIS".to_string(),
+                },
+                LayerDefinition {
+                    name: "Strategy".to_string(),
+                    prefix: "STRAT".to_string(),
+                },
+                LayerDefinition {
+                    name: "Epic".to_string(),
+                    prefix: "EPIC".to_string(),
+                },
+                LayerDefinition {
+                    name: "User Story".to_string(),
+                    prefix: "US".to_string(),
+                },
+                LayerDefinition {
+                    name: "Requirement".to_string(),
+                    prefix: "REQ".to_string(),
+                },
+                LayerDefinition {
+                    name: "Technical Specification".to_string(),
+                    prefix: "SPEC".to_string(),
+                },
+            ],
         }
     }
 }
@@ -434,6 +701,44 @@ mod tests {
     }
 
     #[test]
+    fn test_custom_layer_hierarchy_and_coverage_layer() -> Result<(), Box<dyn std::error::Error>> {
+        let model = LayerModel {
+            layers: vec![
+                LayerDefinition {
+                    name: "Goal".to_string(),
+                    prefix: "GOAL".to_string(),
+                },
+                LayerDefinition {
+                    name: "Requirement".to_string(),
+                    prefix: "REQ".to_string(),
+                },
+                LayerDefinition {
+                    name: "Technical Specification".to_string(),
+                    prefix: "SPEC".to_string(),
+                },
+            ],
+        };
+        let root = model
+            .layer_at(0)
+            .ok_or_else(|| std::io::Error::other("configured root layer missing"))?;
+        let requirement = model
+            .layer_at(1)
+            .ok_or_else(|| std::io::Error::other("configured requirement layer missing"))?;
+        let spec = model
+            .layer_at(2)
+            .ok_or_else(|| std::io::Error::other("configured spec layer missing"))?;
+
+        assert_eq!(model.coverage_index(), 1);
+        assert!(requirement.can_have_parent_layer(root));
+        assert!(spec.can_have_parent_layer(root));
+        assert!(!root.can_have_parent_layer(requirement));
+        assert!(model.can_have_parent_layer(spec, requirement));
+        assert!(model.can_have_parent_layer(Layer::SourceCode, spec));
+        assert_eq!(model.name_for_layer(requirement), Some("Requirement"));
+        Ok(())
+    }
+
+    #[test]
     fn test_layer_from_str_and_display() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(Layer::from_str("Vision")?, Layer::Vision);
         assert_eq!(Layer::from_str("vision")?, Layer::Vision);
@@ -446,6 +751,19 @@ mod tests {
 
         assert!(Layer::from_str("nonexistent").is_err());
         assert_eq!(Layer::Requirement.to_string(), "Requirement");
+        Ok(())
+    }
+
+    #[test]
+    fn test_layer_serialization_remains_readable() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            serde_json::to_string(&Layer::Requirement)?,
+            "\"Requirement\""
+        );
+        let custom = Layer::Custom(1);
+        let serialized = serde_json::to_string(&custom)?;
+        assert_eq!(serialized, "\"Layer1\"");
+        assert_eq!(serde_json::from_str::<Layer>(&serialized)?, custom);
         Ok(())
     }
 

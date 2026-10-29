@@ -117,17 +117,15 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
     // 2. Render JSON or Text
     if options.json {
         let mut tree_nodes = Vec::new();
+        let builder = TreeJsonBuilder {
+            graph: &graph,
+            reverse: options.reverse,
+            max_depth: options.depth,
+            layers: &config.layers,
+        };
         for root in &starting_nodes {
             let mut visited = Vec::new();
-            let json_node = build_json_tree(
-                &graph,
-                root,
-                options.reverse,
-                0,
-                options.depth,
-                &mut visited,
-                &mut cycle_detected,
-            );
+            let json_node = builder.build(root, 0, &mut visited, &mut cycle_detected);
             tree_nodes.push(json_node);
         }
 
@@ -135,6 +133,7 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
             &graph,
             &ValidationOptions {
                 require_test_coverage: config.validation.require_test_coverage,
+                layer_model: config.layers.clone(),
                 ..Default::default()
             },
         );
@@ -157,7 +156,11 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
             if i > 0 {
                 output_buf.push('\n');
             }
-            let _ = writeln!(output_buf, "{}: {} ({})", root.id, root.title, root.layer);
+            let layer_name = config
+                .layers
+                .name_for_layer(root.layer)
+                .unwrap_or(root.layer.as_str());
+            let _ = writeln!(output_buf, "{}: {} ({})", root.id, root.title, layer_name);
             if options.depth != Some(0) {
                 let mut walker = TreeWalker {
                     graph: &graph,
@@ -166,6 +169,7 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
                     path_stack: vec![root.id.clone()],
                     cycle_detected: false,
                     out: &mut output_buf,
+                    layers: &config.layers,
                 };
                 walker.render_branches(root, 1, "");
                 cycle_detected |= walker.cycle_detected;
@@ -205,6 +209,7 @@ struct TreeWalker<'g, 'b> {
     path_stack: Vec<NodeId>,
     cycle_detected: bool,
     out: &'b mut String,
+    layers: &'b crate::model::LayerModel,
 }
 
 impl TreeWalker<'_, '_> {
@@ -294,7 +299,11 @@ impl TreeWalker<'_, '_> {
                     let _ = writeln!(
                         self.out,
                         "{prefix}{branch}{}: {} ({})",
-                        child_node.id, child_node.title, child_node.layer
+                        child_node.id,
+                        child_node.title,
+                        self.layers
+                            .name_for_layer(child_node.layer)
+                            .unwrap_or(child_node.layer.as_str())
                     );
                     self.path_stack.push(child_id.clone());
                     self.render_branches(child_node, current_depth + 1, &next_prefix);
@@ -333,93 +342,94 @@ impl TreeWalker<'_, '_> {
     }
 }
 
-fn build_json_tree(
-    graph: &TraceabilityGraph,
-    current: &TraceNode,
+struct TreeJsonBuilder<'g, 'm> {
+    graph: &'g TraceabilityGraph,
     reverse: bool,
-    current_depth: usize,
     max_depth: Option<usize>,
-    path_stack: &mut Vec<NodeId>,
-    cycle_detected: &mut bool,
-) -> TreeNodeJson {
-    let mut children_json = Vec::new();
-    let mut links_json = Vec::new();
+    layers: &'m crate::model::LayerModel,
+}
 
-    if let Some(limit) = max_depth {
-        if current_depth >= limit {
-            return TreeNodeJson {
-                id: current.id.to_string(),
-                title: current.title.clone(),
-                layer: current.layer.to_string(),
-                parents: current.parents.iter().map(|p| p.to_string()).collect(),
-                children: children_json,
-                links: links_json,
-            };
-        }
-    }
+impl TreeJsonBuilder<'_, '_> {
+    fn build(
+        &self,
+        current: &TraceNode,
+        current_depth: usize,
+        path_stack: &mut Vec<NodeId>,
+        cycle_detected: &mut bool,
+    ) -> TreeNodeJson {
+        let mut children_json = Vec::new();
+        let mut links_json = Vec::new();
 
-    path_stack.push(current.id.clone());
-
-    if reverse {
-        let parents = graph.parents_of(&current.id);
-        for parent_id in parents {
-            if path_stack.contains(parent_id) {
-                *cycle_detected = true;
-                continue;
-            }
-            if let Some(parent_node) = graph.get_node(parent_id) {
-                let child = build_json_tree(
-                    graph,
-                    parent_node,
-                    reverse,
-                    current_depth + 1,
-                    max_depth,
-                    path_stack,
-                    cycle_detected,
-                );
-                children_json.push(child);
-            }
-        }
-    } else {
-        let children = graph.children_of(&current.id);
-        for child_id in children {
-            if path_stack.contains(child_id) {
-                *cycle_detected = true;
-                continue;
-            }
-            if let Some(child_node) = graph.get_node(child_id) {
-                let child = build_json_tree(
-                    graph,
-                    child_node,
-                    reverse,
-                    current_depth + 1,
-                    max_depth,
-                    path_stack,
-                    cycle_detected,
-                );
-                children_json.push(child);
+        if let Some(limit) = self.max_depth {
+            if current_depth >= limit {
+                return TreeNodeJson {
+                    id: current.id.to_string(),
+                    title: current.title.clone(),
+                    layer: self
+                        .layers
+                        .name_for_layer(current.layer)
+                        .unwrap_or(current.layer.as_str())
+                        .to_string(),
+                    parents: current.parents.iter().map(|p| p.to_string()).collect(),
+                    children: children_json,
+                    links: links_json,
+                };
             }
         }
 
-        for link in graph.links_for(&current.id) {
-            links_json.push(TreeLinkJson {
-                kind: link.kind.to_string(),
-                target_id: link.target_id.to_string(),
-                source_file: link.source_file.to_string_lossy().to_string(),
-                line: link.line,
-            });
+        path_stack.push(current.id.clone());
+
+        if self.reverse {
+            let parents = self.graph.parents_of(&current.id);
+            for parent_id in parents {
+                if path_stack.contains(parent_id) {
+                    *cycle_detected = true;
+                    continue;
+                }
+                if let Some(parent_node) = self.graph.get_node(parent_id) {
+                    let child =
+                        self.build(parent_node, current_depth + 1, path_stack, cycle_detected);
+                    children_json.push(child);
+                }
+            }
+        } else {
+            let children = self.graph.children_of(&current.id);
+            for child_id in children {
+                if path_stack.contains(child_id) {
+                    *cycle_detected = true;
+                    continue;
+                }
+                if let Some(child_node) = self.graph.get_node(child_id) {
+                    let child =
+                        self.build(child_node, current_depth + 1, path_stack, cycle_detected);
+                    children_json.push(child);
+                }
+            }
+
+            for link in self.graph.links_for(&current.id) {
+                links_json.push(TreeLinkJson {
+                    kind: link.kind.to_string(),
+                    target_id: link.target_id.to_string(),
+                    source_file: link.source_file.to_string_lossy().to_string(),
+                    line: link.line,
+                });
+            }
         }
-    }
 
-    path_stack.pop();
+        path_stack.pop();
 
-    TreeNodeJson {
-        id: current.id.to_string(),
-        title: current.title.clone(),
-        layer: current.layer.to_string(),
-        parents: current.parents.iter().map(|p| p.to_string()).collect(),
-        children: children_json,
-        links: links_json,
+        TreeNodeJson {
+            id: current.id.to_string(),
+            title: current.title.clone(),
+            layer: self
+                .layers
+                .name_for_layer(current.layer)
+                .unwrap_or(current.layer.as_str())
+                .to_string(),
+            parents: current.parents.iter().map(|p| p.to_string()).collect(),
+            children: children_json,
+            links: links_json,
+        }
     }
 }
 

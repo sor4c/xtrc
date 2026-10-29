@@ -109,6 +109,43 @@ fn test_tree_reverse_upward_traversal() {
 }
 
 #[test]
+fn test_tree_uses_configured_layer_names() {
+    let temp = tempdir().expect("tempdir");
+    let config = r#"layers = [{ name = "Requirement", prefix = "REQ" }]
+[specs]
+include = ["docs/**/*.md"]
+"#;
+    std::fs::write(temp.path().join(".xtrc.toml"), config).expect("write config");
+    std::fs::create_dir_all(temp.path().join("docs")).expect("create docs");
+    std::fs::write(
+        temp.path().join("docs/req.md"),
+        r#"---
+document_type: requirements_specification
+id: REQ-SPEC-001
+title: Requirements
+version: 1.0.0
+status: approved
+---
+
+### REQ-01: One requirement
+- **Type**: Requirement
+- **Parent**: None
+"#,
+    )
+    .expect("write requirement");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    let output = cmd
+        .current_dir(temp.path())
+        .args(["tree", "--json"])
+        .output()
+        .expect("run tree");
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid tree JSON");
+    assert_eq!(json["tree"][0]["layer"], "Requirement");
+}
+
+#[test]
 fn test_tree_depth_limit() {
     let temp = tempdir().expect("tempdir");
     setup_tree_workspace(temp.path());

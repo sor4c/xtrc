@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use xtrc::graph::{
     validate_graph, BrokenLinkKind, TraceabilityGraph, ValidationOptions, ValidationViolation,
 };
-use xtrc::model::{FileOrigin, Layer, LinkKind, NodeId, TraceLink, TraceNode};
+use xtrc::model::{FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceLink, TraceNode};
 
 fn make_origin(path: &str, line: usize) -> FileOrigin {
     FileOrigin::new(PathBuf::from(path), line)
@@ -269,6 +269,7 @@ fn test_validation_layer_filter() {
         require_test_coverage: true,
         layer_filter: Some(Layer::Requirement),
         id_filter: None,
+        layer_model: LayerModel::default(),
     };
     let report = validate_graph(&graph, &opt_req);
     assert_eq!(report.statistics.orphan_nodes, 1);

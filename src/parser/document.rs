@@ -10,7 +10,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ParseError;
-use crate::model::{FileOrigin, Layer, NodeId, TraceNode};
+use crate::model::{FileOrigin, Layer, LayerModel, NodeId, TraceNode};
 
 /// Allowed lifecycle statuses for specification documents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,7 +93,7 @@ struct NodeBuilder<'a> {
 }
 
 impl NodeBuilder<'_> {
-    fn finalize(self, path: &Path) -> Result<TraceNode, ParseError> {
+    fn finalize(self, path: &Path, layer_model: &LayerModel) -> Result<TraceNode, ParseError> {
         if self.id.prefix().len() < 2 {
             return Err(ParseError::GrammarViolation {
                 token: self.id.to_string(),
@@ -108,40 +108,55 @@ impl NodeBuilder<'_> {
 
         let layer = if let Some(ref t) = self.explicit_type {
             let normalized = t.trim().to_lowercase();
-            match normalized.as_str() {
-                "vision" | "vis" => Layer::Vision,
-                "strategy" | "strat" => Layer::Strategy,
-                "epic" => Layer::Epic,
-                "user story" | "userstory" | "user-story" | "user_story" | "story" | "us" => {
-                    Layer::UserStory
+            if let Some(layer) = layer_model.parse_layer(t) {
+                layer
+            } else if !layer_model.is_default() {
+                match self.id.infer_layer_with_model(layer_model) {
+                    Ok(layer) => layer,
+                    Err(err) => {
+                        return Err(ParseError::GrammarViolation {
+                            token: self.id.to_string(),
+                            path: path.to_path_buf(),
+                            line: self.line,
+                            reason: format!("Unrecognized layer type '{}' and {}", t, err),
+                        });
+                    }
                 }
-                "requirement"
-                | "req"
-                | "functional requirement"
-                | "non-functional requirement"
-                | "nfr" => Layer::Requirement,
-                "technical specification"
-                | "technical spec"
-                | "technicalspec"
-                | "technicalspecification"
-                | "technical-spec"
-                | "technical_spec"
-                | "specification"
-                | "spec" => Layer::TechnicalSpec,
-                _ => match Layer::from_str(t) {
-                    Ok(l) if l.is_specification() => l,
-                    _ => match self.id.infer_layer() {
+            } else {
+                match normalized.as_str() {
+                    "vision" | "vis" => Layer::Vision,
+                    "strategy" | "strat" => Layer::Strategy,
+                    "epic" => Layer::Epic,
+                    "user story" | "userstory" | "user-story" | "user_story" | "story" | "us" => {
+                        Layer::UserStory
+                    }
+                    "requirement"
+                    | "req"
+                    | "functional requirement"
+                    | "non-functional requirement"
+                    | "nfr" => Layer::Requirement,
+                    "technical specification"
+                    | "technical spec"
+                    | "technicalspec"
+                    | "technicalspecification"
+                    | "technical-spec"
+                    | "technical_spec"
+                    | "specification"
+                    | "spec" => Layer::TechnicalSpec,
+                    _ => match Layer::from_str(t) {
                         Ok(l) if l.is_specification() => l,
-                        Err(err) => {
-                            return Err(ParseError::GrammarViolation {
-                                token: self.id.to_string(),
-                                path: path.to_path_buf(),
-                                line: self.line,
-                                reason: format!("Unrecognized layer type '{}' and {}", t, err),
-                            });
-                        }
-                        Ok(l) => {
-                            return Err(ParseError::GrammarViolation {
+                        _ => match self.id.infer_layer_with_model(layer_model) {
+                            Ok(l) if l.is_specification() => l,
+                            Err(err) => {
+                                return Err(ParseError::GrammarViolation {
+                                    token: self.id.to_string(),
+                                    path: path.to_path_buf(),
+                                    line: self.line,
+                                    reason: format!("Unrecognized layer type '{}' and {}", t, err),
+                                });
+                            }
+                            Ok(l) => {
+                                return Err(ParseError::GrammarViolation {
                                 token: self.id.to_string(),
                                 path: path.to_path_buf(),
                                 line: self.line,
@@ -150,12 +165,13 @@ impl NodeBuilder<'_> {
                                     t, l
                                 ),
                             });
-                        }
+                            }
+                        },
                     },
-                },
+                }
             }
         } else {
-            match self.id.infer_layer() {
+            match self.id.infer_layer_with_model(layer_model) {
                 Ok(l) => l,
                 Err(err) => {
                     return Err(ParseError::GrammarViolation {
@@ -366,6 +382,15 @@ pub fn has_frontmatter(content: &str) -> bool {
 
 /// Parses Markdown specification content string into a structured `SpecDocument` AST.
 pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseError> {
+    parse_document_with_layers(content, path, &LayerModel::default())
+}
+
+/// Parses Markdown specification content using the configured layer hierarchy.
+pub fn parse_document_with_layers(
+    content: &str,
+    path: &Path,
+    layer_model: &LayerModel,
+) -> Result<SpecDocument, ParseError> {
     let (frontmatter, body_start_line) = parse_frontmatter(content, path)?;
 
     let trimmed_start = content.strip_prefix('\u{feff}').unwrap_or(content);
@@ -407,7 +432,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
             if hash_count == 1 || hash_count == 2 {
                 // Section break at H1 or H2: finalize current node if any
                 if let Some(builder) = current_node.take() {
-                    match builder.finalize(path) {
+                    match builder.finalize(path, layer_model) {
                         Ok(n) => nodes.push(n),
                         Err(e) => errors.push(e),
                     }
@@ -424,7 +449,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
 
                 if NodeId::is_valid(id_part) {
                     if let Some(builder) = current_node.take() {
-                        match builder.finalize(path) {
+                        match builder.finalize(path, layer_model) {
                             Ok(n) => nodes.push(n),
                             Err(e) => errors.push(e),
                         }
@@ -524,7 +549,7 @@ pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseE
     }
 
     if let Some(builder) = current_node.take() {
-        match builder.finalize(path) {
+        match builder.finalize(path, layer_model) {
             Ok(n) => nodes.push(n),
             Err(e) => errors.push(e),
         }
@@ -551,6 +576,16 @@ pub fn parse_spec_content(content: &str, path: &Path) -> Result<Vec<TraceNode>, 
     Ok(doc.nodes)
 }
 
+/// Parses specification content using the configured layer hierarchy.
+pub fn parse_spec_content_with_layers(
+    content: &str,
+    path: &Path,
+    layer_model: &LayerModel,
+) -> Result<Vec<TraceNode>, ParseError> {
+    let doc = parse_document_with_layers(content, path, layer_model)?;
+    Ok(doc.nodes)
+}
+
 /// Reads a specification file from disk and parses it into a structured `SpecDocument` AST.
 pub fn parse_document_file(path: &Path) -> Result<SpecDocument, ParseError> {
     let content = fs::read_to_string(path).map_err(|err| ParseError::Io {
@@ -564,6 +599,18 @@ pub fn parse_document_file(path: &Path) -> Result<SpecDocument, ParseError> {
 pub fn parse_spec_file(path: &Path) -> Result<Vec<TraceNode>, ParseError> {
     let doc = parse_document_file(path)?;
     Ok(doc.nodes)
+}
+
+/// Reads and parses a specification file using the configured layer hierarchy.
+pub fn parse_spec_file_with_layers(
+    path: &Path,
+    layer_model: &LayerModel,
+) -> Result<Vec<TraceNode>, ParseError> {
+    let content = fs::read_to_string(path).map_err(|err| ParseError::Io {
+        path: path.to_path_buf(),
+        source: err,
+    })?;
+    parse_spec_content_with_layers(&content, path, layer_model)
 }
 
 #[cfg(test)]
@@ -733,5 +780,56 @@ status: approved
 "#;
         let res = parse_document(content, Path::new("docs/req.md"));
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_custom_layer_prefix_and_type_are_parsed() -> Result<(), Box<dyn std::error::Error>> {
+        let model = LayerModel {
+            layers: vec![crate::model::LayerDefinition {
+                name: "Requirement".to_string(),
+                prefix: "REQ".to_string(),
+            }],
+        };
+        let content = r#"---
+document_type: requirements_specification
+id: REQ-SPEC-001
+title: Requirements
+version: 1.0.0
+status: approved
+---
+
+### REQ-01: One requirement
+- **Type**: Requirement
+- **Parent**: None
+"#;
+        let doc = parse_document_with_layers(content, Path::new("docs/req.md"), &model)?;
+        assert_eq!(doc.nodes.len(), 1);
+        assert_eq!(doc.nodes[0].layer, Layer::Custom(1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_custom_layer_unknown_prefix_diagnostic_lists_valid_prefixes() {
+        let model = LayerModel {
+            layers: vec![crate::model::LayerDefinition {
+                name: "Requirement".to_string(),
+                prefix: "REQ".to_string(),
+            }],
+        };
+        let content = r#"---
+document_type: requirements_specification
+id: REQ-SPEC-001
+title: Requirements
+version: 1.0.0
+status: approved
+---
+
+### OTHER-01: Unknown layer
+"#;
+        let error = parse_document_with_layers(content, Path::new("docs/req.md"), &model);
+        assert!(error.is_err());
+        assert!(error
+            .err()
+            .is_some_and(|error| error.to_string().contains("Valid prefixes: REQ")));
     }
 }

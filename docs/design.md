@@ -83,6 +83,8 @@ The system is organized into decoupled modules with strict boundaries:
     strict = false
     require_test_coverage = true
     ```
+  - The optional top-level `layers` array replaces the default hierarchy. Its entries specify
+    `{ name, prefix }` in root-to-leaf order; if omitted, the built-in layers apply.
 - **Validation & Behavioral Rules**:
   - If `.xtrc.toml` exists and `--force` is false, abort with exit code 2 and emit an error to `stderr`.
   - Atomic file generation: writes configuration via temporary file rename to prevent partial initialization on interruption.

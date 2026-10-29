@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 use tempfile::tempdir;
 use xtrc::{
     contains_trace_marker_bytes, detect_cycles, load_workspace_graph, scan_comments_file,
-    scan_comments_text, validate_graph, FileOrigin, Layer, LinkKind, NodeId, TraceLink, TraceNode,
-    TraceabilityGraph, ValidationOptions,
+    scan_comments_text, validate_graph, FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceLink,
+    TraceNode, TraceabilityGraph, ValidationOptions,
 };
 
 /// Helper to construct the `@trace` marker string dynamically in test fixtures so
@@ -161,6 +161,7 @@ fn test_nfr_perf_1000_file_workspace_sub_500ms() {
             require_test_coverage: true,
             layer_filter: None,
             id_filter: None,
+            layer_model: LayerModel::default(),
         },
     );
     let elapsed = start.elapsed();
@@ -331,6 +332,7 @@ fn test_nfr_scale_linear_dag_validation_and_prefilter_throughput() {
             require_test_coverage: true,
             layer_filter: None,
             id_filter: None,
+            layer_model: LayerModel::default(),
         },
     );
     let dag_elapsed = dag_start.elapsed();
@@ -365,6 +367,7 @@ fn test_nfr_determ_reproducible_parallel_execution() {
                 require_test_coverage: true,
                 layer_filter: None,
                 id_filter: None,
+                layer_model: LayerModel::default(),
             },
         );
         // Normalize timestamp across iterations to test algorithmic determinism of graph and report content
@@ -414,6 +417,7 @@ fn test_nfr_self_repository_verification_sub_200ms() {
             require_test_coverage: true,
             layer_filter: None,
             id_filter: None,
+            layer_model: LayerModel::default(),
         },
     );
     let elapsed = start.elapsed();
