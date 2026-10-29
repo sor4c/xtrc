@@ -610,6 +610,10 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
     assert!(ci_raw.contains("cargo clippy --all-targets --all-features -- -D warnings"));
     assert!(ci_raw.contains("cargo test --all-targets --all-features"));
     assert!(ci_raw.contains("check --strict"));
+    assert!(ci_raw.contains("aarch64-unknown-linux-gnu"));
+    assert!(ci_raw.contains("x86_64-apple-darwin"));
+    assert!(ci_raw.contains("aarch64-apple-darwin"));
+    assert!(ci_raw.contains("x86_64-pc-windows-msvc"));
 
     // (3) & (4) Verify Head-of-Main Delivery & SPDX JSON SBOM GitHub Action (.github/workflows/delivery.yml)
     let delivery_raw = std::fs::read_to_string(".github/workflows/delivery.yml")
@@ -620,14 +624,42 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
         delivery_yaml.get("concurrency").is_some(),
         "delivery.yml must configure concurrency to serialize release delivery"
     );
-    let deliver_job = delivery_yaml
+    let jobs = delivery_yaml
         .get("jobs")
-        .and_then(|j| j.get("deliver"))
-        .expect("delivery.yml must contain 'deliver' job");
+        .expect("delivery.yml must define jobs");
+    assert!(
+        delivery_raw.contains("workflows: [\"Verify\"]")
+            && delivery_raw.contains("github.event.workflow_run.conclusion == 'success'"),
+        "delivery must only start publishing after the Verify workflow succeeds"
+    );
+    let prepare_job = jobs
+        .get("prepare")
+        .expect("delivery.yml must contain 'prepare' job");
+    assert!(
+        prepare_job
+            .get("if")
+            .and_then(|condition| condition.as_str())
+            .is_some_and(|condition| condition.contains("conclusion == 'success'")),
+        "prepare job must reject unsuccessful verification runs"
+    );
+    let build_job = jobs
+        .get("build")
+        .expect("delivery.yml must contain 'build' job");
     assert_eq!(
-        deliver_job.get("needs").and_then(|n| n.as_str()),
-        Some("verify"),
-        "deliver job must depend on verify job passing first"
+        build_job.get("needs").and_then(|n| n.as_str()),
+        Some("prepare"),
+        "native builds must depend on version and SBOM preparation"
+    );
+    let publish_job = jobs
+        .get("publish")
+        .expect("delivery.yml must contain 'publish' job");
+    assert_eq!(
+        publish_job
+            .get("needs")
+            .and_then(|n| n.as_sequence())
+            .map(|needs| needs.len()),
+        Some(2),
+        "publish job must wait for preparation and all native builds"
     );
     assert!(
         delivery_raw.contains("scripts/generate-sbom.sh")
@@ -639,8 +671,13 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
             && delivery_raw.contains(".tar.gz")
             && delivery_raw.contains("scripts/compute-version.sh")
             && delivery_raw.contains("scripts/generate-homebrew-formula.sh")
-            && delivery_raw.contains("xtrc.rb"),
-        "delivery.yml must compute unique version and build .deb, .tar.gz, and Homebrew formula (xtrc.rb)"
+            && delivery_raw.contains("xtrc.rb")
+            && delivery_raw.contains("aarch64-unknown-linux-gnu")
+            && delivery_raw.contains("x86_64-apple-darwin")
+            && delivery_raw.contains("aarch64-apple-darwin")
+            && delivery_raw.contains("x86_64-pc-windows-msvc")
+            && delivery_raw.contains("SHA256SUMS"),
+        "delivery.yml must build all supported native targets and publish packages, Homebrew formula, and checksums"
     );
 
     // Verify scripts/compute-version.sh produces distinct versions for distinct commits
@@ -754,15 +791,22 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
     );
 
     // (1) Execute scripts/generate-homebrew-formula.sh and validate the generated Homebrew formula (xtrc.rb)
-    let dummy_tarball = tmp_dir
+    let dummy_intel_tarball = tmp_dir
         .path()
-        .join(format!("xtrc-v{v2}-x86_64-unknown-linux-gnu.tar.gz"));
-    std::fs::write(&dummy_tarball, b"dummy-tarball-bytes").expect("write dummy tarball");
+        .join(format!("xtrc-v{v2}-x86_64-apple-darwin.tar.gz"));
+    let dummy_arm_tarball = tmp_dir
+        .path()
+        .join(format!("xtrc-v{v2}-aarch64-apple-darwin.tar.gz"));
+    std::fs::write(&dummy_intel_tarball, b"intel-tarball-bytes")
+        .expect("write dummy Intel macOS tarball");
+    std::fs::write(&dummy_arm_tarball, b"arm-tarball-bytes")
+        .expect("write dummy Apple Silicon macOS tarball");
     let formula_path = tmp_dir.path().join("xtrc.rb");
     let brew_status = std::process::Command::new("bash")
         .arg("scripts/generate-homebrew-formula.sh")
         .arg(&v2)
-        .arg(&dummy_tarball)
+        .arg(&dummy_intel_tarball)
+        .arg(&dummy_arm_tarball)
         .arg(&formula_path)
         .status()
         .expect("execute scripts/generate-homebrew-formula.sh");
@@ -775,6 +819,30 @@ fn test_t4_rw11_ci_cd_packaging_and_spdx_sbom_delivery_contracts() {
     assert!(formula_raw.contains("bin.install \"xtrc\""));
     assert!(formula_raw.contains("doc.install \"README.md\", \"xtrc.spdx.json\""));
     assert!(formula_raw.contains(&format!("version \"{v2}\"")));
+    assert!(formula_raw.contains("on_intel do"));
+    assert!(formula_raw.contains("on_arm do"));
+    assert!(formula_raw.contains("x86_64-apple-darwin.tar.gz"));
+    assert!(formula_raw.contains("aarch64-apple-darwin.tar.gz"));
+    let intel_sha = std::process::Command::new("sha256sum")
+        .arg(&dummy_intel_tarball)
+        .output()
+        .expect("compute dummy Intel archive checksum");
+    let arm_sha = std::process::Command::new("sha256sum")
+        .arg(&dummy_arm_tarball)
+        .output()
+        .expect("compute dummy Apple Silicon archive checksum");
+    let intel_sha = String::from_utf8_lossy(&intel_sha.stdout)
+        .split_whitespace()
+        .next()
+        .expect("Intel checksum")
+        .to_string();
+    let arm_sha = String::from_utf8_lossy(&arm_sha.stdout)
+        .split_whitespace()
+        .next()
+        .expect("Apple Silicon checksum")
+        .to_string();
+    assert!(formula_raw.contains(&intel_sha));
+    assert!(formula_raw.contains(&arm_sha));
 }
 
 // ==============================================================================

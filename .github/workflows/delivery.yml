@@ -6,159 +6,278 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: ["Verify"]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  verify:
-    name: Verify All Quality Gates
+  prepare:
+    name: Prepare Version and SBOM
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'v')))
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+      is_main: ${{ steps.version.outputs.is_main }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Compute unique delivery version
+        id: version
+        shell: bash
+        env:
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          VERIFIED_EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          echo "version=$(bash scripts/compute-version.sh)" >> "$GITHUB_OUTPUT"
+          echo "commit=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+          if [[ "${EVENT_NAME}" == "workflow_run" && "${VERIFIED_EVENT}" == "push" && "${HEAD_BRANCH}" == "main" ]]; then
+            echo "is_main=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_main=false" >> "$GITHUB_OUTPUT"
+          fi
+          RELEASE_TAG=""
+          if [[ "${EVENT_NAME}" == "workflow_run" && "${VERIFIED_EVENT}" == "push" ]]; then
+            RELEASE_TAG="$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+          fi
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate and verify SPDX 2.3 JSON SBOM
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash scripts/generate-sbom.sh dist/xtrc.spdx.json "${VERSION}"
+          jq -e --arg ver "${VERSION}" '.spdxVersion == "SPDX-2.3" and (.packages | any(.name == "xtrc" and .versionInfo == $ver)) and (.relationships | length > 0)' dist/xtrc.spdx.json >/dev/null
+
+      - name: Upload SPDX SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: xtrc-sbom
+          path: dist/xtrc.spdx.json
+          if-no-files-found: error
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            binary: xtrc
+            deb_arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            binary: xtrc
+            deb_arch: arm64
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            binary: xtrc
+            deb_arch: none
+          - target: aarch64-apple-darwin
+            runner: macos-15
+            binary: xtrc
+            deb_arch: none
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+            binary: xtrc.exe
+            deb_arch: none
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
       - name: Cache Cargo registry and build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Check formatting (cargo fmt)
-        run: cargo fmt --check
-
-      - name: Run strict linter diagnostics (cargo clippy)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Run automated test and NFR benchmark suite (cargo test)
-        run: cargo test --all-targets --all-features
-
-      - name: Verify repository bidirectional traceability (xtrc check --strict)
-        run: cargo run --locked -- check --strict
-
-      - name: Measure CLI performance and enforce NFR SLA budgets (scripts/measure-perf.sh)
-        run: bash scripts/measure-perf.sh dist/perf-report.json
-
-  deliver:
-    name: Build Package, SPDX SBOM & Publish Delivery
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository with full history for version policy
-        uses: actions/checkout@v4
+      - name: Download SPDX SBOM
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
+          name: xtrc-sbom
+          path: dist
 
-      - name: Install Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install Debian packaging tool (cargo-deb)
-        run: cargo install cargo-deb --locked
-
-      - name: Compute unique delivery version and build release binary
+      - name: Verify native target and build release binary
+        shell: bash
+        env:
+          XTRC_DELIVERY_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          VERSION="$(bash scripts/compute-version.sh)"
-          echo "XTRC_DELIVERY_VERSION=${VERSION}" >> "${GITHUB_ENV}"
-          XTRC_DELIVERY_VERSION="${VERSION}" cargo build --release --locked
-          ./target/release/xtrc --version | grep -F "xtrc ${VERSION}"
+          rustc -vV | grep -Fx "host: ${{ matrix.target }}"
+          cargo build --release --locked
+          XTRC="target/release/${{ matrix.binary }}"
+          "${XTRC}" --version | grep -F "xtrc ${XTRC_DELIVERY_VERSION}"
+          "${XTRC}" --root examples/demo check --strict
 
-      - name: Measure release binary performance and verify NFR SLA fulfillment
+      - name: Measure release binary performance
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        env:
+          XTRC_DELIVERY_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           bash scripts/measure-perf.sh dist/perf-report.json ./target/release/xtrc
           jq -e '.status == "pass" and (.benchmarks | length >= 5) and (.benchmarks | all(.passed == true))' dist/perf-report.json >/dev/null
 
-      - name: Generate SPDX 2.3 JSON SBOM and package deliverables
+      - name: Install Debian packaging tool
+        if: matrix.deb_arch != 'none'
+        run: cargo install cargo-deb --locked
+
+      - name: Build Debian package
+        if: matrix.deb_arch != 'none'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo deb --no-build --deb-version "${VERSION}" --output "dist/xtrc_${VERSION}_${{ matrix.deb_arch }}.deb"
+
+      - name: Stage and archive Unix binary
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          VERSION="${XTRC_DELIVERY_VERSION}"
-          TARGET="x86_64-unknown-linux-gnu"
-          STAGE_DIR="dist/xtrc-v${VERSION}-${TARGET}"
+          STAGE_DIR="dist/xtrc-v${VERSION}-${{ matrix.target }}"
           mkdir -p "${STAGE_DIR}"
+          cp "target/release/${{ matrix.binary }}" "${STAGE_DIR}/"
+          cp README.md LICENSE dist/xtrc.spdx.json "${STAGE_DIR}/"
+          tar -C dist -czf "dist/xtrc-v${VERSION}-${{ matrix.target }}.tar.gz" "xtrc-v${VERSION}-${{ matrix.target }}"
 
-          # 1. Generate SPDX 2.3 JSON SBOM stamped with unique delivery version (Requirements 3 & Version Policy)
-          bash scripts/generate-sbom.sh dist/xtrc.spdx.json "${VERSION}"
-          jq -e --arg ver "${VERSION}" '.spdxVersion == "SPDX-2.3" and (.packages | any(.name == "xtrc" and .versionInfo == $ver)) and (.relationships | length > 0)' dist/xtrc.spdx.json >/dev/null
+      - name: Stage and archive Windows binary
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          STAGE_DIR="dist/xtrc-v${VERSION}-${{ matrix.target }}"
+          mkdir -p "${STAGE_DIR}"
+          cp "target/release/${{ matrix.binary }}" README.md LICENSE dist/xtrc.spdx.json "${STAGE_DIR}/"
 
-          # 2. Build Debian package (.deb) stamped with unique delivery version (Requirements 1 & 3)
-          cargo deb --no-build --deb-version "${VERSION}" --output "dist/xtrc_${VERSION}_amd64.deb"
+      - name: Create Windows ZIP archive
+        if: runner.os == 'Windows'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: pwsh
+        run: |
+          $stage = "dist/xtrc-v${env:VERSION}-${{ matrix.target }}"
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/xtrc-v${env:VERSION}-${{ matrix.target }}.zip"
 
-          # 3. Build portable binary archive (.tar.gz) including SPDX SBOM (Requirements 1 & 3)
-          cp target/release/xtrc "${STAGE_DIR}/xtrc"
-          cp README.md "${STAGE_DIR}/README.md"
-          if [ -f LICENSE ]; then cp LICENSE "${STAGE_DIR}/LICENSE"; fi
-          cp dist/xtrc.spdx.json "${STAGE_DIR}/xtrc.spdx.json"
-          tar -C dist -czf "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "xtrc-v${VERSION}-${TARGET}"
-          # Also emit a version-agnostic alias for binstall and release consumers
-          cp "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "dist/xtrc-${TARGET}.tar.gz"
-          rm -rf "${STAGE_DIR}"
+      - name: Create Windows tarball for cargo-binstall
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          tar -C dist -czf "dist/xtrc-v${VERSION}-${{ matrix.target }}.tar.gz" "xtrc-v${VERSION}-${{ matrix.target }}"
 
-          # 4. Generate Homebrew Formula package (xtrc.rb) pinned to immutable release tag v${VERSION} (Requirement 1)
-          bash scripts/generate-homebrew-formula.sh "${VERSION}" "dist/xtrc-v${VERSION}-${TARGET}.tar.gz" "dist/xtrc.rb" "${GITHUB_REPOSITORY:-sor4c/xtrc}" "v${VERSION}"
+      - name: Upload target artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xtrc-${{ matrix.target }}
+          path: |
+            dist/xtrc-v${{ needs.prepare.outputs.version }}-${{ matrix.target }}.*
+            dist/xtrc_${{ needs.prepare.outputs.version }}_${{ matrix.deb_arch }}.deb
+            dist/perf-report.json
+          if-no-files-found: ignore
 
-          # 5. Generate SHA-256 checksums for all delivery artifacts
-          (cd dist && sha256sum xtrc.spdx.json perf-report.json xtrc.rb *.deb *.tar.gz > SHA256SUMS)
+  publish:
+    name: Assemble and Publish Delivery
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all target artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: xtrc-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate native macOS Homebrew formula and checksums
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          bash scripts/generate-homebrew-formula.sh \
+            "${VERSION}" \
+            "dist/xtrc-v${VERSION}-x86_64-apple-darwin.tar.gz" \
+            "dist/xtrc-v${VERSION}-aarch64-apple-darwin.tar.gz" \
+            "dist/xtrc.rb" \
+            "${GITHUB_REPOSITORY:-sor4c/xtrc}" \
+            "v${VERSION}"
+          (cd dist && sha256sum xtrc.spdx.json perf-report.json xtrc.rb *.deb *.tar.gz *.zip > SHA256SUMS)
 
       - name: Upload head-of-main delivery artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xtrc-${{ env.XTRC_DELIVERY_VERSION }}-delivery
+          name: xtrc-${{ needs.prepare.outputs.version }}-delivery
           path: |
             dist/xtrc.spdx.json
             dist/perf-report.json
             dist/xtrc.rb
             dist/*.deb
             dist/*.tar.gz
+            dist/*.zip
             dist/SHA256SUMS
           if-no-files-found: error
 
       - name: Publish immutable versioned GitHub Release and update main-head pointer
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: needs.prepare.outputs.is_main == 'true' || needs.prepare.outputs.release_tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT_SHA: ${{ needs.prepare.outputs.commit }}
+          IS_MAIN: ${{ needs.prepare.outputs.is_main }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        shell: bash
         run: |
-          VERSION="${XTRC_DELIVERY_VERSION}"
           VERSION_TAG="v${VERSION}"
           TITLE="xtrc ${VERSION}"
-          NOTES="Automated delivery for version \`${VERSION}\` (commit \`${GITHUB_SHA}\`). Includes Homebrew formula (\`xtrc.rb\`), Debian package (\`xtrc_${VERSION}_amd64.deb\`), prebuilt Linux binary archive (\`xtrc-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz\`), \`SHA256SUMS\`, CI/CD performance SLA report (\`perf-report.json\`), and SPDX 2.3 JSON SBOM (\`xtrc.spdx.json\`)."
+          NOTES="Automated multi-platform delivery for version \`${VERSION}\` (commit \`${COMMIT_SHA}\`). Includes native Linux x86_64/ARM64, macOS Intel/Apple Silicon, and Windows x86_64 archives, Debian packages, Homebrew formula (\`xtrc.rb\`), checksums, performance report, and SPDX 2.3 SBOM. macOS binaries are unsigned and may require Gatekeeper approval."
 
           IS_PRERELEASE="--prerelease"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]] && [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ "${RELEASE_TAG}" == "${VERSION_TAG}" ]] && [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             IS_PRERELEASE=""
           fi
 
-          # 1. Create immutable versioned release v<VERSION> (never overwrite an existing version tag)
           if gh release view "${VERSION_TAG}" >/dev/null 2>&1; then
             echo "Error: Release '${VERSION_TAG}' already exists. Refusing to overwrite an immutable versioned delivery." >&2
             exit 1
           fi
-          gh release create "${VERSION_TAG}" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+          gh release create "${VERSION_TAG}" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/*.zip dist/SHA256SUMS \
             --title "${TITLE}" \
             --notes "${NOTES}" \
-            --target "${GITHUB_SHA}" \
+            --target "${COMMIT_SHA}" \
             ${IS_PRERELEASE}
 
-          # 2. Refresh rolling 'main-head' convenience release so it contains only the current version's artifacts on main
-          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+          if [ "${IS_MAIN}" = "true" ]; then
             if gh release view "main-head" >/dev/null 2>&1; then
               gh release delete "main-head" --yes --cleanup-tag
             fi
-            gh release create "main-head" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/SHA256SUMS \
+            gh release create "main-head" dist/xtrc.spdx.json dist/perf-report.json dist/xtrc.rb dist/*.deb dist/*.tar.gz dist/*.zip dist/SHA256SUMS \
               --title "xtrc Head-of-Main (${VERSION})" \
               --notes "${NOTES}" \
-              --target "${GITHUB_SHA}" \
+              --target "${COMMIT_SHA}" \
               --prerelease
           fi
-
