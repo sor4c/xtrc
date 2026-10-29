@@ -13,7 +13,7 @@ use crate::config::WorkspaceConfig;
 use crate::error::{CliError, ParseError};
 use crate::graph::model::TraceabilityGraph;
 use crate::model::{LinkKind, TraceNode};
-use crate::parser::document::parse_spec_file;
+use crate::parser::document::parse_spec_file_with_layers;
 use crate::scanner::comments::scan_workspace_comments;
 use crate::scanner::traversal::{categorize_files, walk_workspace};
 
@@ -71,7 +71,7 @@ pub fn load_workspace_graph_ext(
                 }
                 continue;
             }
-            match parse_spec_file(spec_file) {
+            match parse_spec_file_with_layers(spec_file, &config.layers) {
                 Ok(mut file_nodes) => {
                     for node in &mut file_nodes {
                         if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
@@ -114,7 +114,7 @@ pub fn load_workspace_graph_ext(
                     }
                     return Ok(Vec::new());
                 }
-                let mut file_nodes = parse_spec_file(spec_file)?;
+                let mut file_nodes = parse_spec_file_with_layers(spec_file, &config.layers)?;
                 for node in &mut file_nodes {
                     if let Ok(rel_path) = node.file_origin.path.strip_prefix(&root) {
                         node.file_origin.path = rel_path.to_path_buf();

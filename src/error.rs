@@ -33,6 +33,10 @@ pub enum ConfigError {
     #[error("Configured path '{0}' must be relative to workspace root")]
     InvalidRelativePath(PathBuf),
 
+    /// Dispatched when the configured layer hierarchy is invalid.
+    #[error("Invalid layer configuration: {0}")]
+    InvalidLayerModel(String),
+
     /// Dispatched when a file system I/O error occurs while reading configuration.
     #[error("I/O error reading configuration '{path}': {source}")]
     Io {

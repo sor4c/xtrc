@@ -73,10 +73,30 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
 
     // 1. Resolve target layer
     let target_layer = match options.layer {
-        Some(ref s) => Layer::from_str(s).map_err(|e| CliError::InvalidArguments {
-            reason: format!("Invalid layer '{s}': {e}"),
-        })?,
-        None => Layer::Requirement,
+        Some(ref s) => config
+            .layers
+            .parse_layer(s)
+            .or_else(|| {
+                Layer::from_str(s)
+                    .ok()
+                    .filter(|layer| config.layers.is_default() || layer.is_leaf())
+            })
+            .ok_or_else(|| CliError::InvalidArguments {
+                reason: format!(
+                    "Invalid layer '{s}'. Valid layers: {}",
+                    config
+                        .layers
+                        .layers
+                        .iter()
+                        .map(|layer| layer.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            })?,
+        None => config
+            .layers
+            .layer_at(config.layers.coverage_index())
+            .unwrap_or(Layer::Requirement),
     };
 
     // 2. Resolve output format
@@ -97,6 +117,7 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
 
     // 3. Assemble matrix rows
     let nodes = graph.nodes_by_layer(target_layer);
+    let child_layer = config.layers.layer_at(usize::from(target_layer.rank()));
     let mut rows: Vec<MatrixRow> = Vec::new();
 
     for node in nodes {
@@ -110,7 +131,7 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
             .children_of(&node.id)
             .iter()
             .filter_map(|cid| graph.get_node(cid))
-            .filter(|n| n.layer == Layer::TechnicalSpec)
+            .filter(|n| Some(n.layer) == child_layer)
             .collect();
 
         let specs: Vec<String> = child_specs.iter().map(|n| n.id.to_string()).collect();
@@ -160,11 +181,28 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
     }
 
     // 4. Render output to stdout
+    let layer_index = usize::from(target_layer.rank()).saturating_sub(1);
+    let target_name = config
+        .layers
+        .name_for_layer(target_layer)
+        .unwrap_or("Layer");
+    let parent_header = layer_index
+        .checked_sub(1)
+        .and_then(|index| config.layers.layers.get(index))
+        .map(|layer| format!("Parent {}", layer.name))
+        .unwrap_or_else(|| "Parents".to_string());
+    let child_header = config
+        .layers
+        .layers
+        .get(layer_index + 1)
+        .map(|layer| format!("Child {}", layer.name))
+        .unwrap_or_else(|| "Children".to_string());
+    let id_header = format!("{target_name} ID");
     let headers = [
-        "Requirement ID",
+        id_header.as_str(),
         "Title",
-        "Parent US",
-        "Specs",
+        parent_header.as_str(),
+        child_header.as_str(),
         "Code Links",
         "Test Links",
         "Status",
@@ -176,6 +214,7 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
                 &graph,
                 &ValidationOptions {
                     require_test_coverage: config.validation.require_test_coverage,
+                    layer_model: config.layers.clone(),
                     ..Default::default()
                 },
             );

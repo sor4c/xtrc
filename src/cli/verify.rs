@@ -43,9 +43,26 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
     // 1. Parse layer filter if requested
     let layer_filter = match options.layer {
         Some(ref s) => {
-            let parsed = Layer::from_str(s).map_err(|e| CliError::InvalidArguments {
-                reason: format!("Invalid layer '{s}': {e}"),
-            })?;
+            let parsed = config
+                .layers
+                .parse_layer(s)
+                .or_else(|| {
+                    Layer::from_str(s)
+                        .ok()
+                        .filter(|layer| config.layers.is_default() || layer.is_leaf())
+                })
+                .ok_or_else(|| CliError::InvalidArguments {
+                    reason: format!(
+                        "Invalid layer '{s}'. Valid layers: {}",
+                        config
+                            .layers
+                            .layers
+                            .iter()
+                            .map(|layer| layer.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                })?;
             Some(parsed)
         }
         None => None,
@@ -79,6 +96,7 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
         require_test_coverage: config.validation.require_test_coverage,
         layer_filter,
         id_filter,
+        layer_model: config.layers.clone(),
     };
 
     // 4. Execute 4-stage validation
@@ -125,7 +143,10 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
             .map_err(|e| CliError::Io(std::io::Error::other(e)))?;
         write_buffered_stdout(&format!("{json_str}\n"))?;
     } else if !options.quiet {
-        write_buffered_stdout(&format!("{}\n", report.format_terminal_summary()))?;
+        write_buffered_stdout(&format!(
+            "{}\n",
+            report.format_terminal_summary_for_layers(&config.layers)
+        ))?;
     }
 
     // 8. Determine exit code contract

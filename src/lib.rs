@@ -35,12 +35,13 @@ pub use graph::{
     ValidationStats, ValidationViolation, ViolationSeverity,
 };
 pub use model::{
-    validate_parent_relationship, FileOrigin, IdError, Layer, LinkKind, NodeId, TraceLink,
-    TraceNode, NODE_ID_REGEX_PATTERN,
+    validate_parent_relationship, FileOrigin, IdError, Layer, LayerDefinition, LayerModel,
+    LinkKind, NodeId, TraceLink, TraceNode, NODE_ID_REGEX_PATTERN,
 };
 pub use parser::{
-    parse_document, parse_document_file, parse_spec_content, parse_spec_file, DocumentFrontmatter,
-    DocumentStatus, SpecDocument,
+    parse_document, parse_document_file, parse_document_with_layers, parse_spec_content,
+    parse_spec_content_with_layers, parse_spec_file, parse_spec_file_with_layers,
+    DocumentFrontmatter, DocumentStatus, SpecDocument,
 };
 pub use scanner::{
     classify_link_kind, clean_id_token, contains_trace_marker_bytes, is_test_file_path,

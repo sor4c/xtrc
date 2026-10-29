@@ -30,12 +30,16 @@ pub enum IdError {
     },
 
     /// Dispatched when an identifier declares an unrecognized layer prefix.
-    #[error("Unknown or unrecognized layer prefix '{prefix}' in identifier '{token}'")]
+    #[error(
+        "Unknown layer prefix '{prefix}' in identifier '{token}'. Valid prefixes: {valid_prefixes}"
+    )]
     UnknownPrefix {
         /// The full identifier token.
         token: String,
         /// The unrecognized prefix segment.
         prefix: String,
+        /// Prefixes declared by the active layer model.
+        valid_prefixes: String,
     },
 
     /// Dispatched when an unrecognized string is parsed as a Layer.
@@ -57,11 +61,17 @@ impl IdError {
                 line,
                 reason,
             },
-            IdError::UnknownPrefix { token, prefix } => ParseError::GrammarViolation {
+            IdError::UnknownPrefix {
+                token,
+                prefix,
+                valid_prefixes,
+            } => ParseError::GrammarViolation {
                 token,
                 path: path.into(),
                 line,
-                reason: format!("Unknown layer prefix '{prefix}'"),
+                reason: format!(
+                    "Unknown layer prefix '{prefix}'. Valid prefixes: {valid_prefixes}"
+                ),
             },
             other => ParseError::GrammarViolation {
                 token: other.to_string(),
@@ -228,11 +238,20 @@ impl NodeId {
     /// Returns `Err(IdError::UnknownPrefix)` if the prefix is not one of the standard
     /// specification layer prefixes (`VIS`, `STRAT`, `EPIC`, `US`, `REQ`, `SPEC`).
     pub fn infer_layer(&self) -> Result<Layer, IdError> {
-        match Layer::from_prefix(self.prefix()) {
+        self.infer_layer_with_model(&crate::model::LayerModel::default())
+    }
+
+    /// Infers the layer using the supplied ordered layer model.
+    pub fn infer_layer_with_model(
+        &self,
+        model: &crate::model::LayerModel,
+    ) -> Result<Layer, IdError> {
+        match model.layer_for_prefix(self.prefix()) {
             Some(layer) => Ok(layer),
             None => Err(IdError::UnknownPrefix {
                 token: self.0.clone(),
                 prefix: self.prefix().to_string(),
+                valid_prefixes: model.valid_prefixes(),
             }),
         }
     }
@@ -497,34 +516,32 @@ mod tests {
         );
         assert!(validate_parent_relationship(&vis, Layer::Vision, &vis, Layer::Vision).is_err());
 
-        // 2. Strategy can only parent to Vision
+        // A node may reference any earlier layer in the hierarchy.
         assert!(validate_parent_relationship(&strat, Layer::Strategy, &vis, Layer::Vision).is_ok());
         assert!(validate_parent_relationship(&strat, Layer::Strategy, &epic, Layer::Epic).is_err());
         assert!(
             validate_parent_relationship(&strat, Layer::Strategy, &strat, Layer::Strategy).is_err()
         );
 
-        // 3. Epic can only parent to Strategy
+        // 3. Epic can parent to any higher layer.
         assert!(validate_parent_relationship(&epic, Layer::Epic, &strat, Layer::Strategy).is_ok());
-        assert!(validate_parent_relationship(&epic, Layer::Epic, &vis, Layer::Vision).is_err());
+        assert!(validate_parent_relationship(&epic, Layer::Epic, &vis, Layer::Vision).is_ok());
         assert!(validate_parent_relationship(&epic, Layer::Epic, &us, Layer::UserStory).is_err());
 
-        // 4. UserStory can only parent to Epic
+        // 4. UserStory can parent to any higher layer.
         assert!(validate_parent_relationship(&us, Layer::UserStory, &epic, Layer::Epic).is_ok());
         assert!(
-            validate_parent_relationship(&us, Layer::UserStory, &strat, Layer::Strategy).is_err()
+            validate_parent_relationship(&us, Layer::UserStory, &strat, Layer::Strategy).is_ok()
         );
         assert!(
             validate_parent_relationship(&us, Layer::UserStory, &req, Layer::Requirement).is_err()
         );
 
-        // 5. Requirement can only parent to UserStory
+        // 5. Requirement can parent to any higher layer.
         assert!(
             validate_parent_relationship(&req, Layer::Requirement, &us, Layer::UserStory).is_ok()
         );
-        assert!(
-            validate_parent_relationship(&req, Layer::Requirement, &epic, Layer::Epic).is_err()
-        );
+        assert!(validate_parent_relationship(&req, Layer::Requirement, &epic, Layer::Epic).is_ok());
         assert!(validate_parent_relationship(
             &req,
             Layer::Requirement,
@@ -533,7 +550,7 @@ mod tests {
         )
         .is_err());
 
-        // 6. TechnicalSpec can parent to Requirement OR UserStory
+        // 6. TechnicalSpec can parent to any higher layer.
         assert!(validate_parent_relationship(
             &spec,
             Layer::TechnicalSpec,
@@ -546,10 +563,10 @@ mod tests {
                 .is_ok()
         );
         assert!(
-            validate_parent_relationship(&spec, Layer::TechnicalSpec, &epic, Layer::Epic).is_err()
+            validate_parent_relationship(&spec, Layer::TechnicalSpec, &epic, Layer::Epic).is_ok()
         );
         assert!(
-            validate_parent_relationship(&spec, Layer::TechnicalSpec, &vis, Layer::Vision).is_err()
+            validate_parent_relationship(&spec, Layer::TechnicalSpec, &vis, Layer::Vision).is_ok()
         );
 
         // 7. Leaf links
@@ -569,8 +586,7 @@ mod tests {
         )
         .is_ok());
         assert!(
-            validate_parent_relationship(&code_leaf, Layer::SourceCode, &epic, Layer::Epic)
-                .is_err()
+            validate_parent_relationship(&code_leaf, Layer::SourceCode, &epic, Layer::Epic).is_ok()
         );
 
         let test_leaf = NodeId::new("TEST-01")?;
@@ -601,7 +617,7 @@ mod tests {
             &vis,
             Layer::Vision
         )
-        .is_err());
+        .is_ok());
         Ok(())
     }
 

@@ -3,6 +3,7 @@
 //! // @trace SPEC-DISC-INIT, SPEC-DISC-DISCOVERY, REQ-CFG-DISCOVERY, REQ-CLI-INIT
 
 use crate::error::ConfigError;
+use crate::model::LayerModel;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -15,6 +16,10 @@ pub struct WorkspaceConfig {
     /// Schema format version (default: "1").
     #[serde(default = "default_version")]
     pub version: String,
+
+    /// Ordered specification layers. Omitted configurations use the built-in hierarchy.
+    #[serde(default, skip_serializing_if = "is_default_layer_model")]
+    pub layers: LayerModel,
 
     /// Project metadata configuration.
     #[serde(default)]
@@ -97,6 +102,10 @@ fn default_version() -> String {
     "1".to_string()
 }
 
+fn is_default_layer_model(model: &LayerModel) -> bool {
+    model.is_default()
+}
+
 fn default_project_name() -> String {
     "xtrc".to_string()
 }
@@ -145,6 +154,7 @@ impl Default for WorkspaceConfig {
     fn default() -> Self {
         Self {
             version: default_version(),
+            layers: LayerModel::default(),
             project: ProjectConfig::default(),
             specs: SpecsConfig::default(),
             code: CodeConfig::default(),
@@ -201,7 +211,9 @@ impl Default for ValidationConfig {
 impl WorkspaceConfig {
     /// Deserializes a WorkspaceConfig from a TOML string.
     pub fn from_toml(content: &str) -> Result<Self, ConfigError> {
-        toml::from_str(content).map_err(ConfigError::ParseToml)
+        let config: Self = toml::from_str(content).map_err(ConfigError::ParseToml)?;
+        config.validate_layers()?;
+        Ok(config)
     }
 
     /// Serializes the WorkspaceConfig to a formatted TOML string.
@@ -215,10 +227,18 @@ impl WorkspaceConfig {
             path: path.to_path_buf(),
             source: e,
         })?;
-        toml::from_str(&content).map_err(|e| ConfigError::InvalidToml {
+        let config: Self = toml::from_str(&content).map_err(|e| ConfigError::InvalidToml {
             path: path.to_path_buf(),
             source: e,
-        })
+        })?;
+        config.validate_layers()?;
+        Ok(config)
+    }
+
+    fn validate_layers(&self) -> Result<(), ConfigError> {
+        self.layers
+            .validate()
+            .map_err(ConfigError::InvalidLayerModel)
     }
 
     /// Validates that internal paths are relative to repository root.
@@ -308,6 +328,34 @@ mod tests {
         assert_eq!(parsed.project.root, ".");
         assert_eq!(parsed.specs.include, vec!["docs/**/*.md"]);
         Ok(())
+    }
+
+    #[test]
+    fn test_configured_layers_parse_and_validate() -> Result<(), Box<dyn std::error::Error>> {
+        let config = WorkspaceConfig::from_toml(
+            r#"
+layers = [{ name = "Requirement", prefix = "REQ" }]
+"#,
+        )?;
+        assert_eq!(config.layers.layers.len(), 1);
+        assert_eq!(config.layers.layers[0].name, "Requirement");
+        assert_eq!(config.layers.layers[0].prefix, "REQ");
+        assert_eq!(
+            config.layers.layer_for_prefix("REQ"),
+            Some(crate::model::Layer::Custom(1))
+        );
+        assert_eq!(WorkspaceConfig::from_toml(&config.to_toml()?)?, config);
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_configured_layers_are_rejected() {
+        let empty = WorkspaceConfig::from_toml("layers = []");
+        assert!(empty.is_err());
+
+        let invalid_prefix =
+            WorkspaceConfig::from_toml(r#"layers = [{ name = "Requirement", prefix = "req" }]"#);
+        assert!(invalid_prefix.is_err());
     }
 
     #[test]

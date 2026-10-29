@@ -121,6 +121,7 @@ pub fn run_export(options: ExportOptions<'_>) -> Result<(), CliError> {
         &graph,
         &ValidationOptions {
             require_test_coverage: config.validation.require_test_coverage,
+            layer_model: config.layers.clone(),
             ..Default::default()
         },
     );
@@ -159,7 +160,11 @@ pub fn run_export(options: ExportOptions<'_>) -> Result<(), CliError> {
                 export_nodes.push(ExportNodeJson {
                     id: node.id.to_string(),
                     title: node.title.clone(),
-                    layer: node.layer.to_string(),
+                    layer: config
+                        .layers
+                        .name_for_layer(node.layer)
+                        .unwrap_or(node.layer.as_str())
+                        .to_string(),
                     parents,
                     children,
                     source_origin: node.file_origin.to_string(),

@@ -99,6 +99,57 @@ fn test_verify_alias_equivalence() {
 }
 
 #[test]
+fn test_single_configured_requirement_layer_passes_strict_check() {
+    let temp = tempdir().expect("tempdir");
+    let config = r#"version = "1"
+layers = [{ name = "Requirement", prefix = "REQ" }]
+
+[specs]
+include = ["docs/**/*.md"]
+
+[code]
+include = ["src/**/*.rs"]
+extensions = [".rs"]
+
+[tests]
+include = ["tests/**/*.rs"]
+"#;
+    std::fs::write(temp.path().join(".xtrc.toml"), config).expect("write config");
+    std::fs::create_dir_all(temp.path().join("docs")).expect("create docs");
+    std::fs::create_dir_all(temp.path().join("src")).expect("create src");
+    std::fs::create_dir_all(temp.path().join("tests")).expect("create tests");
+    std::fs::write(
+        temp.path().join("docs/req.md"),
+        r#"---
+document_type: requirements_specification
+id: REQ-SPEC-001
+title: Requirements
+version: 1.0.0
+status: approved
+---
+
+### REQ-01: One requirement
+- **Type**: Requirement
+- **Parent**: None
+"#,
+    )
+    .expect("write requirement");
+    std::fs::write(temp.path().join("src/lib.rs"), "// @trace REQ-01\n").expect("write source");
+    std::fs::write(temp.path().join("tests/req.rs"), "// @trace:test REQ-01\n")
+        .expect("write test");
+
+    let mut cmd = Command::cargo_bin("xtrc").expect("find bin");
+    cmd.current_dir(temp.path())
+        .args(["check", "--strict"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Orphan Nodes:         0"))
+        .stdout(predicate::str::contains("Requirement Nodes:"))
+        .stdout(predicate::str::contains("Technical Specs:").not())
+        .stdout(predicate::str::contains("Coverage Rate:        100.0%"));
+}
+
+#[test]
 fn test_check_strict_fails_on_uncovered() {
     let temp = tempdir().expect("tempdir");
     setup_valid_workspace(temp.path());
