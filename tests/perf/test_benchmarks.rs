@@ -13,6 +13,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
+use xtrc::render::{render_json, render_terminal_summary};
+use xtrc::Report;
 use xtrc::{
     contains_trace_marker_bytes, detect_cycles, load_workspace_graph, scan_comments_file,
     scan_comments_text, validate_graph, FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceLink,
@@ -358,9 +360,9 @@ fn test_nfr_determ_reproducible_parallel_execution() {
     let mut baseline_links_len: Option<usize> = None;
 
     for iteration in 0..5 {
-        let (_root, _config, graph) =
+        let (_root, config, graph) =
             load_workspace_graph(Some(dir.path()), None).expect("parallel load");
-        let mut report = validate_graph(
+        let validation = validate_graph(
             &graph,
             &ValidationOptions {
                 strict: true,
@@ -370,10 +372,9 @@ fn test_nfr_determ_reproducible_parallel_execution() {
                 layer_model: LayerModel::default(),
             },
         );
-        // Normalize timestamp across iterations to test algorithmic determinism of graph and report content
-        report.timestamp = "1970-01-01T00:00:00Z".to_string();
-        let json = report.to_json().expect("serialize report json");
-        let summary = report.format_terminal_summary();
+        let report = Report::from_graph(&graph, validation, "check", &config.layers);
+        let json = render_json(&report).expect("serialize report json");
+        let summary = render_terminal_summary(&report);
         let links_len = graph.all_links().len();
 
         if let Some(ref expected_json) = baseline_json {

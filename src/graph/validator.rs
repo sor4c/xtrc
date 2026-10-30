@@ -4,14 +4,13 @@
 //! // @trace SPEC-DAG-VALIDATE, SPEC-PERF-BOUNDS, SPEC-PERF-HARNESS, REQ-NFR-PERF, REQ-NFR-SCALE, REQ-NFR-DETERM, REQ-BROKEN-LINK, REQ-FORWARD-COV, REQ-BACKWARD-JUST
 //! // @trace REQ-ORPHAN-DETECT, REQ-STRICT-GATE, REQ-EXIT-CODES, US-VERIFY-01, US-ORPHAN-01, US-GATE-01, US-PERF-01
 
-use std::collections::{BTreeSet, VecDeque};
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, VecDeque};
 
 use crate::graph::cycle::detect_cycles;
 use crate::graph::model::TraceabilityGraph;
 use crate::model::{FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceNode};
+use crate::report::{calculate_node_coverage, CoverageStatus, NodeCoverage};
 
 /// Severity level of a validation violation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -23,24 +22,6 @@ pub enum ViolationSeverity {
     Warning,
     /// Fatal error (always fails validation with exit code 1).
     Error,
-}
-
-impl ViolationSeverity {
-    /// Returns the uppercase display tag (e.g., "INFO", "WARN", "ERROR").
-    #[inline]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Info => "INFO",
-            Self::Warning => "WARN",
-            Self::Error => "ERROR",
-        }
-    }
-}
-
-impl fmt::Display for ViolationSeverity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
 }
 
 /// The specific classification of a broken reference.
@@ -254,21 +235,17 @@ pub struct EpicCoverage {
     pub coverage_percent: f64,
 }
 
-/// Overall verification report produced by the 4-stage validation engine.
+/// Validation result produced by the 4-stage validation engine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ValidationReport {
-    /// Universal JSON schema version (e.g., "1.0.0").
-    pub schema_version: String,
-    /// CLI command producing this report ("check").
-    pub command: String,
-    /// ISO 8601 UTC timestamp of execution.
-    pub timestamp: String,
     /// High-level pass/fail outcome status ("pass" or "fail").
     pub status: String,
     /// Summary numerical metrics.
     pub statistics: ValidationStats,
     /// List of discovered integrity violations and coverage gaps (deterministic order).
     pub violations: Vec<ValidationViolation>,
+    /// Per-node coverage data shared with every report renderer.
+    pub node_coverage: Vec<NodeCoverage>,
     /// Per-epic coverage decomposition breakdown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub epic_coverage: Vec<EpicCoverage>,
@@ -299,99 +276,6 @@ impl ValidationReport {
         } else {
             1
         }
-    }
-
-    /// Serializes report to deterministic JSON string.
-    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
-    }
-
-    /// Formats an aligned human-readable summary table for stdout.
-    pub fn format_terminal_summary(&self) -> String {
-        format!(
-            "Total Nodes:          {}\n\
-             Technical Specs:      {}\n\
-             Requirements:         {}\n\
-             Covered Reqs:         {}\n\
-             Code Links:           {}\n\
-             Test Links:           {}\n\
-             Broken Links:         {}\n\
-             Cycle Loops:          {}\n\
-             Orphan Nodes:         {}\n\
-             Coverage Rate:        {:.1}%\n\
-             Status:               {}",
-            self.statistics.total_nodes,
-            self.statistics.specs_count,
-            self.statistics.requirements_count,
-            self.statistics.covered_nodes,
-            self.statistics.code_links,
-            self.statistics.test_links,
-            self.statistics.broken_links,
-            self.statistics.cycles_count,
-            self.statistics.orphan_nodes,
-            self.statistics.coverage_percent,
-            if self.status == "pass" {
-                "PASS"
-            } else {
-                "FAIL"
-            },
-        )
-    }
-
-    /// Formats a terminal summary using the configured layer names.
-    pub fn format_terminal_summary_for_layers(&self, layers: &LayerModel) -> String {
-        if layers.is_default() {
-            return self.format_terminal_summary();
-        }
-
-        let coverage_index = layers.coverage_index();
-        let coverage_name = layers
-            .layer_at(coverage_index)
-            .and_then(|layer| layers.name_for_layer(layer))
-            .unwrap_or("Coverage");
-        let spec_count = layers
-            .layer_at(coverage_index + 1)
-            .and_then(|layer| layers.name_for_layer(layer))
-            .map(|name| format!("{name} Nodes:        {}\n", self.statistics.specs_count))
-            .unwrap_or_default();
-
-        format!(
-            "Total Nodes:          {}\n\
-             {coverage_name} Nodes:        {}\n\
-             Covered Nodes:        {}\n\
-             {spec_count}\
-             Code Links:           {}\n\
-             Test Links:           {}\n\
-             Broken Links:         {}\n\
-             Cycle Loops:          {}\n\
-             Orphan Nodes:         {}\n\
-             Coverage Rate:        {:.1}%\n\
-             Status:               {}",
-            self.statistics.total_nodes,
-            self.statistics.requirements_count,
-            self.statistics.covered_nodes,
-            self.statistics.code_links,
-            self.statistics.test_links,
-            self.statistics.broken_links,
-            self.statistics.cycles_count,
-            self.statistics.orphan_nodes,
-            self.statistics.coverage_percent,
-            if self.status == "pass" {
-                "PASS"
-            } else {
-                "FAIL"
-            },
-        )
-    }
-
-    /// Formats diagnostic lines for stderr.
-    pub fn format_diagnostics_stderr(&self, strict: bool) -> String {
-        let mut out = String::new();
-        for v in &self.violations {
-            let sev = v.severity(strict);
-            out.push_str(&format!("[{sev}] {}\n", v.message()));
-        }
-        out
     }
 }
 
@@ -427,6 +311,12 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     let mut violations: Vec<ValidationViolation> = Vec::new();
     let coverage_index = options.layer_model.coverage_index();
     let coverage_layer = options.layer_model.layer_at(coverage_index);
+    let node_coverage =
+        calculate_node_coverage(graph, &options.layer_model, options.require_test_coverage);
+    let coverage_by_id: std::collections::BTreeMap<_, _> = node_coverage
+        .iter()
+        .map(|coverage| (&coverage.node_id, coverage))
+        .collect();
     let spec_layer = (coverage_index + 1 < options.layer_model.layers.len())
         .then(|| options.layer_model.layer_at(coverage_index + 1))
         .flatten();
@@ -520,26 +410,27 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     // -------------------------------------------------------------------------
     // STAGE 3: Forward Coverage (Downward Decomposition Completeness)
     // -------------------------------------------------------------------------
-    let mut req_nodes: Vec<&TraceNode> = graph
+    let mut req_nodes: Vec<(&TraceNode, &NodeCoverage)> = graph
         .all_nodes()
-        .filter(|n| Some(n.layer) == coverage_layer)
+        .zip(node_coverage.iter())
+        .filter(|(node, _)| Some(node.layer) == coverage_layer)
         .collect();
 
     // If id_filter is set, scope requirements to connected subgraph in O(V + E)
     if let Some(ref target_id) = options.id_filter {
         let target_descendants = graph.descendants_of(target_id);
         let target_ancestors = graph.ancestors_of(target_id);
-        req_nodes.retain(|n| {
-            n.id == *target_id
-                || target_descendants.contains(&n.id)
-                || target_ancestors.contains(&n.id)
+        req_nodes.retain(|(node, _)| {
+            node.id == *target_id
+                || target_descendants.contains(&node.id)
+                || target_ancestors.contains(&node.id)
         });
     }
 
     let requirements_count = req_nodes.len();
     let mut covered_nodes = 0usize;
 
-    for req in &req_nodes {
+    for (req, coverage) in &req_nodes {
         let children = graph.children_of(&req.id);
         let spec_children: Vec<&TraceNode> = children
             .iter()
@@ -566,9 +457,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         }
 
         // 3b. Code Links Check (Direct or via child specs)
-        let has_direct_code = graph.has_code_link(&req.id);
-        let has_child_code = spec_children.iter().any(|s| graph.has_code_link(&s.id));
-        let has_code = has_direct_code || has_child_code;
+        let has_code = coverage.has_code;
 
         if !has_code {
             let coverage_name = coverage_layer
@@ -585,9 +474,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         }
 
         // 3c. Test Links Check (Direct or via child specs)
-        let has_direct_test = graph.has_test_link(&req.id);
-        let has_child_test = spec_children.iter().any(|s| graph.has_test_link(&s.id));
-        let has_test = has_direct_test || has_child_test;
+        let has_test = coverage.has_test;
 
         if options.require_test_coverage && !has_test {
             let coverage_name = coverage_layer
@@ -603,13 +490,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
             });
         }
 
-        let is_fulfilled = if options.require_test_coverage {
-            has_code && has_test
-        } else {
-            has_code
-        };
-
-        if is_fulfilled {
+        if coverage.status == CoverageStatus::Covered {
             covered_nodes += 1;
         }
     }
@@ -720,25 +601,10 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
             let total_reqs = descendant_reqs.len();
             let mut covered_reqs = 0;
             for req_id in &descendant_reqs {
-                let spec_children: Vec<&TraceNode> = graph
-                    .children_of(req_id)
-                    .iter()
-                    .filter_map(|id| graph.get_node(id))
-                    .filter(|n| Some(n.layer) == spec_layer)
-                    .collect();
-
-                let has_code = graph.has_code_link(req_id)
-                    || spec_children.iter().any(|s| graph.has_code_link(&s.id));
-                let has_test = graph.has_test_link(req_id)
-                    || spec_children.iter().any(|s| graph.has_test_link(&s.id));
-
-                let is_req_fulfilled = if options.require_test_coverage {
-                    has_code && has_test
-                } else {
-                    has_code
-                };
-
-                if is_req_fulfilled {
+                let coverage = coverage_by_id.get(req_id);
+                let is_covered =
+                    coverage.is_some_and(|coverage| coverage.status == CoverageStatus::Covered);
+                if is_covered {
                     covered_reqs += 1;
                 }
             }
@@ -754,9 +620,6 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
     }
 
     ValidationReport {
-        schema_version: "1.0.0".to_string(),
-        command: "check".to_string(),
-        timestamp: crate::cli::output::generate_utc_timestamp(),
         status: if is_pass {
             "pass".to_string()
         } else {
@@ -764,6 +627,7 @@ pub fn validate_graph(graph: &TraceabilityGraph, options: &ValidationOptions) ->
         },
         statistics: stats,
         violations,
+        node_coverage,
         epic_coverage,
     }
 }
@@ -1054,9 +918,11 @@ mod tests {
             make_link("SPEC-01", "tests/foo.rs", 20, LinkKind::AutomatedTest),
         ];
         let graph = TraceabilityGraph::build(nodes, links)?;
-        let report = graph.validate(true);
+        let validation = graph.validate(true);
+        let report =
+            crate::report::Report::from_graph(&graph, validation, "check", &LayerModel::default());
 
-        let json_str = report.to_json()?;
+        let json_str = serde_json::to_string_pretty(&report)?;
         let val: serde_json::Value = serde_json::from_str(&json_str)?;
 
         assert_eq!(val["schema_version"], "1.0.0");

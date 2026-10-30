@@ -42,7 +42,7 @@ schema_version: "1.0.0"
 - **Parent**: US-REPORT-01, REQ-FMT-JSON
 - **Type**: Functional Requirement
 - **Intent & Value**: Allow external automation tools, security scanners, and compliance pipelines to ingest and process traceability graphs programmatically.
-- **Observable Contract & Behavior**: Emits structured JSON conforming to the universal `UniversalEnvelope` schema (`schema_version: "1.0.0"`) and RFC 4180-compliant CSV tables with properly escaped cells.
+- **Observable Contract & Behavior**: Emits structured JSON conforming to the shared, deterministic [Report schema](./report.schema.json) (`schema_version: "1.0.0"`) and RFC 4180-compliant CSV tables with properly escaped cells. Report JSON contains the same envelope and common node/link/coverage data for `check`, `matrix`, `tree`, and `export`; it omits wall-clock timestamps.
 - **Acceptance Criteria**: Output conforms strictly to the respective format schemas and exits with code `0`.
 
 ## 3. Layer 6: Technical Specifications (SPEC-*)

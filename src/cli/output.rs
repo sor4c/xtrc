@@ -3,18 +3,12 @@
 //! // @trace SPEC-CLI-OUTPUT, SPEC-CLI-MATRIX, SPEC-CLI-TREE, SPEC-CLI-EXPORT
 //! // @trace REQ-FMT-JSON, REQ-UNIX-STREAMS, REQ-EXIT-CODES
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::{self, BufWriter, IsTerminal, Write};
 use std::str::FromStr;
-use std::time::SystemTime;
-
-use serde::{Deserialize, Serialize};
 
 use crate::error::CliError;
-use crate::graph::validator::ValidationStats;
-
-/// Universal schema version string for all machine-readable output.
-pub const SCHEMA_VERSION: &str = "1.0.0";
 
 /// Supported output formatting strategies across CLI commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,113 +107,6 @@ pub fn write_buffered_stdout(content: &str) -> Result<(), CliError> {
     writer.write_all(content.as_bytes()).map_err(CliError::Io)?;
     writer.flush().map_err(CliError::Io)?;
     Ok(())
-}
-
-/// Generic top-level envelope guaranteeing universal schema compliance across all subcommands.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UniversalEnvelope<T> {
-    /// Schema version (always "1.0.0").
-    pub schema_version: String,
-    /// The executing subcommand ("check", "matrix", "tree", "export", "init").
-    pub command: String,
-    /// Execution timestamp in ISO 8601 UTC format.
-    pub timestamp: String,
-    /// Outcome indicator: "pass" or "fail".
-    pub status: String,
-    /// Validation summary metrics.
-    pub statistics: ValidationStats,
-    /// Command-specific data payload.
-    #[serde(flatten)]
-    pub payload: T,
-}
-
-impl<T: Serialize> UniversalEnvelope<T> {
-    /// Constructs a new universal envelope.
-    pub fn new(command: &str, status: &str, stats: ValidationStats, payload: T) -> Self {
-        Self {
-            schema_version: SCHEMA_VERSION.to_string(),
-            command: command.to_string(),
-            timestamp: generate_utc_timestamp(),
-            status: status.to_string(),
-            statistics: stats,
-            payload,
-        }
-    }
-
-    /// Emits pretty-printed JSON directly to standard output through a locked, buffered writer.
-    pub fn print_stdout(&self) -> Result<(), CliError> {
-        let json = serde_json::to_string_pretty(self).map_err(|e| CliError::InvalidArguments {
-            reason: format!("JSON serialization error: {e}"),
-        })?;
-        let stdout = io::stdout();
-        let mut writer = BufWriter::new(stdout.lock());
-        writeln!(writer, "{json}").map_err(CliError::Io)?;
-        writer.flush().map_err(CliError::Io)?;
-        Ok(())
-    }
-}
-
-/// Generates an ISO 8601 UTC timestamp string without external chrono dependency.
-/// Respects `SOURCE_DATE_EPOCH` for reproducible, deterministic builds and outputs.
-pub fn generate_utc_timestamp() -> String {
-    let now = if let Ok(epoch_str) = std::env::var("SOURCE_DATE_EPOCH") {
-        epoch_str.trim().parse::<u64>().unwrap_or_else(|_| {
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()
-        })
-    } else {
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-    };
-
-    let days = now / 86400;
-    let seconds_of_day = now % 86400;
-    let hours = seconds_of_day / 3600;
-    let minutes = (seconds_of_day % 3600) / 60;
-    let seconds = seconds_of_day % 60;
-
-    let mut year = 1970;
-    let mut day_rem = days;
-    loop {
-        let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-        let days_in_year = if leap { 366 } else { 365 };
-        if day_rem < days_in_year {
-            break;
-        }
-        day_rem -= days_in_year;
-        year += 1;
-    }
-
-    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    let days_in_months = [
-        31,
-        if leap { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ];
-    let mut month = 1;
-    for &dim in &days_in_months {
-        if day_rem < dim {
-            break;
-        }
-        day_rem -= dim;
-        month += 1;
-    }
-    let day = day_rem + 1;
-
-    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
 
 /// Escapes a CSV field according to RFC 4180.
@@ -538,23 +425,6 @@ mod tests {
         assert!(csv.contains("ID,Title,Notes\n"));
         assert!(csv.contains("REQ-01,Standard title,None\n"));
         assert!(csv.contains("REQ-02,\"Title, with comma\",\"Quote \"\"test\"\"\"\n"));
-    }
-
-    #[test]
-    fn test_utc_timestamp_format() {
-        let ts = generate_utc_timestamp();
-        assert_eq!(ts.len(), 20);
-        assert!(ts.ends_with('Z'));
-        assert_eq!(&ts[10..11], "T");
-    }
-
-    #[test]
-    fn test_utc_timestamp_respects_source_date_epoch() {
-        // 1700000000 = 2023-11-14T22:13:20Z
-        std::env::set_var("SOURCE_DATE_EPOCH", "1700000000");
-        let ts = generate_utc_timestamp();
-        std::env::remove_var("SOURCE_DATE_EPOCH");
-        assert_eq!(ts, "2023-11-14T22:13:20Z");
     }
 
     #[test]

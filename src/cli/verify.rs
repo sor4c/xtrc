@@ -10,6 +10,8 @@ use crate::cli::pipeline::load_workspace_graph_ext;
 use crate::error::CliError;
 use crate::graph::validator::{validate_graph, ValidationOptions};
 use crate::model::{Layer, NodeId};
+use crate::render::{render_diagnostics, render_json, render_terminal_summary};
+use crate::report::Report;
 
 /// Options configuring `xtrc check` / `xtrc verify` execution.
 #[derive(Debug, Clone, Default)]
@@ -100,12 +102,12 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
     };
 
     // 4. Execute 4-stage validation
-    let mut report = validate_graph(&graph, &validation_options);
+    let mut validation = validate_graph(&graph, &validation_options);
 
     let is_empty_graph = graph.is_empty();
     let is_empty_fatal = is_strict && is_empty_graph;
     if is_empty_fatal {
-        report.status = "fail".to_string();
+        validation.status = "fail".to_string();
     }
 
     // 5. Detect and report circular dependencies to stderr
@@ -118,7 +120,9 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
     }
 
     // 6. Stream diagnostic warnings and errors to stderr
-    let diagnostics = report.format_diagnostics_stderr(is_strict);
+    let passed = validation.is_success(is_strict);
+    let report = Report::from_graph(&graph, validation, "check", &config.layers);
+    let diagnostics = render_diagnostics(&report, is_strict);
     if !diagnostics.is_empty() {
         eprint!("{diagnostics}");
     }
@@ -138,19 +142,16 @@ pub fn run_verify(options: VerifyOptions<'_>) -> Result<(), CliError> {
 
     // 7. Stream structured report exclusively to stdout
     if options.json {
-        let json_str = report
-            .to_json()
-            .map_err(|e| CliError::Io(std::io::Error::other(e)))?;
+        let json_str = render_json(&report).map_err(|e| CliError::InvalidArguments {
+            reason: format!("JSON serialization error: {e}"),
+        })?;
         write_buffered_stdout(&format!("{json_str}\n"))?;
     } else if !options.quiet {
-        write_buffered_stdout(&format!(
-            "{}\n",
-            report.format_terminal_summary_for_layers(&config.layers)
-        ))?;
+        write_buffered_stdout(&format!("{}\n", render_terminal_summary(&report)))?;
     }
 
     // 8. Determine exit code contract
-    if !report.is_success(is_strict) || !cycles.is_empty() || is_empty_fatal {
+    if !passed || !cycles.is_empty() || is_empty_fatal {
         let fatal_count = report
             .violations
             .iter()

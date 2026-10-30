@@ -20,11 +20,11 @@ pub mod error;
 pub mod graph;
 pub mod model;
 pub mod parser;
+pub mod render;
+pub mod report;
 pub mod scanner;
 
-pub use cli::output::{
-    MatrixFormat, OutputFormat, StreamEnvironment, TabularFormatter, UniversalEnvelope,
-};
+pub use cli::output::{MatrixFormat, OutputFormat, StreamEnvironment, TabularFormatter};
 pub use cli::pipeline::load_workspace_graph;
 pub use cli::{Cli, Commands};
 pub use config::WorkspaceConfig;
@@ -43,6 +43,7 @@ pub use parser::{
     parse_spec_content_with_layers, parse_spec_file, parse_spec_file_with_layers,
     DocumentFrontmatter, DocumentStatus, SpecDocument,
 };
+pub use report::{CoverageStatus, NodeCoverage, Report, ReportLink, ReportMatrixRow, ReportNode};
 pub use scanner::{
     classify_link_kind, clean_id_token, contains_trace_marker_bytes, is_test_file_path,
     scan_comment_line, scan_comments_file, scan_comments_text, scan_workspace_comments,
