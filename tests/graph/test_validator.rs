@@ -239,7 +239,8 @@ fn test_json_serialization_matches_cli_schema() -> Result<(), Box<dyn std::error
     let graph = TraceabilityGraph::build(nodes, links)?;
     let report = graph.validate(true);
 
-    let json_str = report.to_json()?;
+    let report = xtrc::Report::from_graph(&graph, report, "check", &LayerModel::default());
+    let json_str = xtrc::render::render_json(&report)?;
     let val: serde_json::Value = serde_json::from_str(&json_str)?;
 
     assert_eq!(val["schema_version"], "1.0.0");

@@ -6,16 +6,12 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde::{Deserialize, Serialize};
-
-use crate::cli::output::{
-    escape_csv_field, write_buffered_stdout, StreamEnvironment, UniversalEnvelope,
-};
+use crate::cli::output::{write_buffered_stdout, StreamEnvironment};
 use crate::cli::pipeline::load_workspace_graph_ext;
 use crate::error::CliError;
-use crate::graph::model::TraceabilityGraph;
 use crate::graph::validator::{validate_graph, ValidationOptions};
-use crate::model::Layer;
+use crate::render::render_json;
+use crate::report::Report;
 
 static ATOMIC_EXPORT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -75,38 +71,6 @@ impl<'a> Default for ExportOptions<'a> {
     }
 }
 
-/// JSON payload representation for `export --format json`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExportPayload {
-    /// Title of the audit document.
-    pub title: String,
-    /// Layered specification nodes with link details.
-    pub nodes: Vec<ExportNodeJson>,
-}
-
-/// Detailed node information for export audit document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExportNodeJson {
-    /// Node identifier.
-    pub id: String,
-    /// Node title.
-    pub title: String,
-    /// Node layer.
-    pub layer: String,
-    /// Parent identifiers.
-    pub parents: Vec<String>,
-    /// Child identifiers.
-    pub children: Vec<String>,
-    /// Provenance file and line origin.
-    pub source_origin: String,
-    /// Description body.
-    pub description: String,
-    /// Code links.
-    pub code_links: Vec<String>,
-    /// Test links.
-    pub test_links: Vec<String>,
-}
-
 /// Executes export generation and file writing.
 pub fn run_export(options: ExportOptions<'_>) -> Result<(), CliError> {
     // Probe stream environment and disable ANSI color codes when piped
@@ -125,72 +89,15 @@ pub fn run_export(options: ExportOptions<'_>) -> Result<(), CliError> {
             ..Default::default()
         },
     );
+    let report = Report::from_graph(&graph, val_report, "export", &config.layers);
 
     // Generate output content string according to selected format
     let content = match format {
-        ExportFormat::Markdown => generate_markdown_export(&graph, &val_report.statistics),
-        ExportFormat::Csv => generate_csv_export(&graph),
-        ExportFormat::Html => {
-            generate_html_export(&graph, &val_report.statistics, val_report.is_success(false))
-        }
+        ExportFormat::Markdown => generate_markdown_export(&report),
+        ExportFormat::Csv => generate_csv_export(&report),
+        ExportFormat::Html => generate_html_export(&report),
         ExportFormat::Json => {
-            let mut export_nodes = Vec::new();
-            for node in graph.all_nodes() {
-                let parents: Vec<String> = graph
-                    .parents_of(&node.id)
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect();
-                let children: Vec<String> = graph
-                    .children_of(&node.id)
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect();
-                let code_links: Vec<String> = graph
-                    .code_links_for(&node.id)
-                    .iter()
-                    .map(|l| format!("{}:{}", l.source_file.display(), l.line))
-                    .collect();
-                let test_links: Vec<String> = graph
-                    .test_links_for(&node.id)
-                    .iter()
-                    .map(|l| format!("{}:{}", l.source_file.display(), l.line))
-                    .collect();
-
-                export_nodes.push(ExportNodeJson {
-                    id: node.id.to_string(),
-                    title: node.title.clone(),
-                    layer: config
-                        .layers
-                        .name_for_layer(node.layer)
-                        .unwrap_or(node.layer.as_str())
-                        .to_string(),
-                    parents,
-                    children,
-                    source_origin: node.file_origin.to_string(),
-                    description: node.description.clone(),
-                    code_links,
-                    test_links,
-                });
-            }
-
-            let status = if val_report.is_success(false) {
-                "pass"
-            } else {
-                "fail"
-            };
-
-            let envelope = UniversalEnvelope::new(
-                "export",
-                status,
-                val_report.statistics,
-                ExportPayload {
-                    title: "Traceability Compliance Audit Report".to_string(),
-                    nodes: export_nodes,
-                },
-            );
-
-            serde_json::to_string_pretty(&envelope).map_err(|e| CliError::InvalidArguments {
+            render_json(&report).map_err(|e| CliError::InvalidArguments {
                 reason: format!("JSON serialization error: {e}"),
             })? + "\n"
         }
@@ -239,11 +146,9 @@ fn escape_html(text: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-fn generate_html_export(
-    graph: &TraceabilityGraph,
-    stats: &crate::graph::validator::ValidationStats,
-    is_success: bool,
-) -> String {
+fn generate_html_export(report: &Report) -> String {
+    let stats = &report.statistics;
+    let is_success = report.status == "pass";
     let mut out = String::with_capacity(8192);
     out.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
     out.push_str("  <meta charset=\"UTF-8\">\n");
@@ -347,94 +252,69 @@ fn generate_html_export(
 
     out.push_str("    <h2>7-Layer Specification Hierarchy</h2>\n");
 
-    let layers = [
-        Layer::Vision,
-        Layer::Strategy,
-        Layer::Epic,
-        Layer::UserStory,
-        Layer::Requirement,
-        Layer::TechnicalSpec,
-    ];
-
-    for layer in layers {
-        let nodes = graph.nodes_by_layer(layer);
+    for layer in ordered_report_layers(report) {
+        let nodes: Vec<_> = report
+            .nodes
+            .iter()
+            .filter(|node| node.layer == layer)
+            .collect();
         if nodes.is_empty() {
             continue;
         }
 
-        out.push_str(&format!(
-            "    <h3>{}</h3>\n",
-            escape_html(&layer.to_string())
-        ));
+        out.push_str(&format!("    <h3>{}</h3>\n", escape_html(layer)));
         out.push_str("    <table>\n");
-        out.push_str("      <thead><tr><th>ID</th><th>Title</th><th>Parents</th><th>Children</th><th>Code Links</th><th>Test Links</th></tr></thead>\n");
+        out.push_str("      <thead><tr><th>ID</th><th>Title</th><th>Parents</th><th>Children</th><th>Code Links</th><th>Test Links</th><th>Coverage Status</th></tr></thead>\n");
         out.push_str("      <tbody>\n");
 
         for node in nodes {
-            let parents: Vec<String> = graph
-                .parents_of(&node.id)
-                .iter()
-                .map(|p| p.to_string())
-                .collect();
-            let children: Vec<String> = graph
-                .children_of(&node.id)
-                .iter()
-                .map(|c| c.to_string())
-                .collect();
-            let code_links = graph.code_links_for(&node.id);
-            let test_links = graph.test_links_for(&node.id);
-
             out.push_str("        <tr>\n");
             out.push_str(&format!(
                 "          <td class=\"node-id\">{}</td>\n",
-                escape_html(node.id.as_str())
+                escape_html(&node.id)
             ));
-            out.push_str(&format!("          <td><strong>{}</strong><br><small style=\"color: var(--text-muted);\">{}</small></td>\n", escape_html(&node.title), escape_html(&node.file_origin.to_string())));
+            out.push_str(&format!("          <td><strong>{}</strong><br><small style=\"color: var(--text-muted);\">{}</small></td>\n", escape_html(&node.title), escape_html(&node.source_origin)));
             out.push_str(&format!(
                 "          <td>{}</td>\n",
-                if parents.is_empty() {
+                if node.parents.is_empty() {
                     "-".to_string()
                 } else {
-                    escape_html(&parents.join(", "))
+                    escape_html(&node.parents.join(", "))
                 }
             ));
             out.push_str(&format!(
                 "          <td>{}</td>\n",
-                if children.is_empty() {
+                if node.children.is_empty() {
                     "-".to_string()
                 } else {
-                    escape_html(&children.join(", "))
+                    escape_html(&node.children.join(", "))
                 }
             ));
 
-            if code_links.is_empty() {
+            if node.code_links.is_empty() {
                 out.push_str("          <td>-</td>\n");
             } else {
                 out.push_str("          <td><ul class=\"links-list\">");
-                for l in code_links {
-                    out.push_str(&format!(
-                        "<li>{}:{}</li>",
-                        escape_html(&l.source_file.display().to_string()),
-                        l.line
-                    ));
+                for link in &node.code_links {
+                    out.push_str(&format!("<li>{}</li>", escape_html(link)));
                 }
                 out.push_str("</ul></td>\n");
             }
 
-            if test_links.is_empty() {
+            if node.test_links.is_empty() {
                 out.push_str("          <td>-</td>\n");
             } else {
                 out.push_str("          <td><ul class=\"links-list\">");
-                for l in test_links {
-                    out.push_str(&format!(
-                        "<li>{}:{}</li>",
-                        escape_html(&l.source_file.display().to_string()),
-                        l.line
-                    ));
+                for link in &node.test_links {
+                    out.push_str(&format!("<li>{}</li>", escape_html(link)));
                 }
                 out.push_str("</ul></td>\n");
             }
 
+            out.push_str(&format!(
+                "          <td>{}</td>\n",
+                escape_html(node.coverage_status.as_str())
+            ));
             out.push_str("        </tr>\n");
         }
 
@@ -445,12 +325,10 @@ fn generate_html_export(
     out
 }
 
-fn generate_markdown_export(
-    graph: &TraceabilityGraph,
-    stats: &crate::graph::validator::ValidationStats,
-) -> String {
+fn generate_markdown_export(report: &Report) -> String {
+    let stats = &report.statistics;
     let mut out = String::new();
-    out.push_str("# Traceability Compliance Audit Report\n\n");
+    out.push_str(&format!("# {}\n\n", report.title));
     out.push_str("## Executive Summary\n\n");
     out.push_str("| Metric | Value |\n");
     out.push_str("| --- | --- |\n");
@@ -488,17 +366,12 @@ fn generate_markdown_export(
 
     out.push_str("## 7-Layer Specification Traceability\n\n");
 
-    let layers = [
-        Layer::Vision,
-        Layer::Strategy,
-        Layer::Epic,
-        Layer::UserStory,
-        Layer::Requirement,
-        Layer::TechnicalSpec,
-    ];
-
-    for layer in layers {
-        let nodes = graph.nodes_by_layer(layer);
+    for layer in ordered_report_layers(report) {
+        let nodes: Vec<_> = report
+            .nodes
+            .iter()
+            .filter(|node| node.layer == layer)
+            .collect();
         if nodes.is_empty() {
             continue;
         }
@@ -509,46 +382,36 @@ fn generate_markdown_export(
             out.push_str(&format!("#### {}: {}\n\n", node.id, node.title));
             out.push_str(&format!("- **ID**: {}\n", node.id));
             out.push_str(&format!("- **Layer**: {}\n", node.layer));
+            out.push_str(&format!(
+                "- **Coverage Status**: {}\n",
+                node.coverage_status.as_str()
+            ));
 
-            let parents = graph.parents_of(&node.id);
-            if parents.is_empty() {
+            if node.parents.is_empty() {
                 out.push_str("- **Parents**: None\n");
             } else {
-                let p_strs: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
-                out.push_str(&format!("- **Parents**: {}\n", p_strs.join(", ")));
+                out.push_str(&format!("- **Parents**: {}\n", node.parents.join(", ")));
             }
 
-            let children = graph.children_of(&node.id);
-            if children.is_empty() {
+            if node.children.is_empty() {
                 out.push_str("- **Children**: None\n");
             } else {
-                let c_strs: Vec<String> = children.iter().map(|c| c.to_string()).collect();
-                out.push_str(&format!("- **Children**: {}\n", c_strs.join(", ")));
+                out.push_str(&format!("- **Children**: {}\n", node.children.join(", ")));
             }
 
-            out.push_str(&format!("- **Source File**: {}\n", node.file_origin));
+            out.push_str(&format!("- **Source File**: {}\n", node.source_origin));
 
-            let code_links = graph.code_links_for(&node.id);
-            if !code_links.is_empty() {
-                let c_strs: Vec<String> = code_links
-                    .iter()
-                    .map(|l| format!("{}:{}", l.source_file.display(), l.line))
-                    .collect();
+            if !node.code_links.is_empty() {
                 out.push_str(&format!(
                     "- **Implementation Links**: {}\n",
-                    c_strs.join(", ")
+                    node.code_links.join(", ")
                 ));
             }
 
-            let test_links = graph.test_links_for(&node.id);
-            if !test_links.is_empty() {
-                let t_strs: Vec<String> = test_links
-                    .iter()
-                    .map(|l| format!("{}:{}", l.source_file.display(), l.line))
-                    .collect();
+            if !node.test_links.is_empty() {
                 out.push_str(&format!(
                     "- **Verification Links**: {}\n",
-                    t_strs.join(", ")
+                    node.test_links.join(", ")
                 ));
             }
 
@@ -563,51 +426,58 @@ fn generate_markdown_export(
     out
 }
 
-fn generate_csv_export(graph: &TraceabilityGraph) -> String {
-    let mut out = String::new();
-    out.push_str("ID,Title,Layer,Parents,Children,Code Links,Test Links,Coverage Status\n");
+fn generate_csv_export(report: &Report) -> String {
+    let headers = [
+        "ID",
+        "Title",
+        "Layer",
+        "Parents",
+        "Children",
+        "Code Links",
+        "Test Links",
+        "Coverage Status",
+    ];
+    let rows = report
+        .nodes
+        .iter()
+        .map(|node| {
+            vec![
+                node.id.clone(),
+                node.title.clone(),
+                node.layer.clone(),
+                node.parents.join("; "),
+                node.children.join("; "),
+                node.code_links_count.to_string(),
+                node.test_links_count.to_string(),
+                node.coverage_status.as_str().to_string(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    crate::cli::output::render_csv(&headers, &rows)
+}
 
-    for node in graph.all_nodes() {
-        let parents = graph.parents_of(&node.id);
-        let p_str = if parents.is_empty() {
-            String::new()
-        } else {
-            let p_strs: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
-            p_strs.join("; ")
-        };
-
-        let children = graph.children_of(&node.id);
-        let c_str = if children.is_empty() {
-            String::new()
-        } else {
-            let c_strs: Vec<String> = children.iter().map(|c| c.to_string()).collect();
-            c_strs.join("; ")
-        };
-
-        let code_count = graph.code_links_for(&node.id).len();
-        let test_count = graph.test_links_for(&node.id).len();
-        let status = match (code_count > 0, test_count > 0) {
-            (true, true) => "Covered",
-            (false, false) => "Uncovered",
-            (false, true) => "Missing Code",
-            (true, false) => "Missing Test",
-        };
-
-        let row = [
-            escape_csv_field(node.id.as_str()),
-            escape_csv_field(&node.title),
-            escape_csv_field(&node.layer.to_string()),
-            escape_csv_field(&p_str),
-            escape_csv_field(&c_str),
-            code_count.to_string(),
-            test_count.to_string(),
-            status.to_string(),
-        ];
-        out.push_str(&row.join(","));
-        out.push('\n');
+fn ordered_report_layers(report: &Report) -> Vec<&str> {
+    let standard = [
+        "Vision",
+        "Strategy",
+        "Epic",
+        "User Story",
+        "UserStory",
+        "Requirement",
+        "Technical Spec",
+        "TechnicalSpec",
+    ];
+    let mut layers: Vec<&str> = standard
+        .iter()
+        .copied()
+        .filter(|layer| report.nodes.iter().any(|node| node.layer == *layer))
+        .collect();
+    for node in &report.nodes {
+        if !layers.contains(&node.layer.as_str()) {
+            layers.push(&node.layer);
+        }
     }
-
-    out
+    layers
 }
 
 #[cfg(test)]

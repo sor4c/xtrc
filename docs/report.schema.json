@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sor4c.github.io/xtrc/report.schema.json",
+  "title": "xtrc Traceability Report",
+  "description": "The deterministic, versioned JSON report emitted by xtrc commands.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "command",
+    "status",
+    "statistics",
+    "nodes",
+    "links",
+    "violations",
+    "epic_coverage",
+    "rows",
+    "total_rows",
+    "tree",
+    "title",
+    "coverage_layer_name",
+    "spec_layer_name",
+    "default_layer_names"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "command": {
+      "enum": ["check", "matrix", "tree", "export"]
+    },
+    "status": {
+      "enum": ["pass", "fail"]
+    },
+    "statistics": {
+      "$ref": "#/$defs/statistics"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/link"
+      }
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "origin", "message"],
+        "properties": {
+          "type": {
+            "enum": [
+              "broken_link",
+              "orphan_node",
+              "missing_spec",
+              "missing_code",
+              "missing_test",
+              "unjustified"
+            ]
+          },
+          "origin": {
+            "$ref": "#/$defs/origin"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "epic_coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "epic_id",
+          "total_requirements",
+          "covered_requirements",
+          "coverage_percent"
+        ],
+        "properties": {
+          "epic_id": {
+            "type": "string"
+          },
+          "total_requirements": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "covered_requirements": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "coverage_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/matrix_row"
+      }
+    },
+    "total_rows": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tree": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tree_node"
+      }
+    },
+    "title": {
+      "type": "string"
+    },
+    "coverage_layer_name": {
+      "type": "string"
+    },
+    "spec_layer_name": {
+      "type": ["string", "null"]
+    },
+    "default_layer_names": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_nodes",
+        "specs_count",
+        "requirements_count",
+        "covered_nodes",
+        "code_links",
+        "test_links",
+        "broken_links",
+        "cycles_count",
+        "orphan_nodes",
+        "coverage_percent"
+      ],
+      "properties": {
+        "total_nodes": {"type": "integer", "minimum": 0},
+        "specs_count": {"type": "integer", "minimum": 0},
+        "requirements_count": {"type": "integer", "minimum": 0},
+        "covered_nodes": {"type": "integer", "minimum": 0},
+        "code_links": {"type": "integer", "minimum": 0},
+        "test_links": {"type": "integer", "minimum": 0},
+        "broken_links": {"type": "integer", "minimum": 0},
+        "cycles_count": {"type": "integer", "minimum": 0},
+        "orphan_nodes": {"type": "integer", "minimum": 0},
+        "coverage_percent": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "line"],
+      "properties": {
+        "path": {"type": "string"},
+        "line": {"type": "integer", "minimum": 0}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "layer",
+        "parents",
+        "children",
+        "specs",
+        "source_origin",
+        "description",
+        "code_links",
+        "test_links",
+        "code_links_count",
+        "test_links_count",
+        "coverage_status"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "layer": {"type": "string"},
+        "parents": {"type": "array", "items": {"type": "string"}},
+        "children": {"type": "array", "items": {"type": "string"}},
+        "specs": {"type": "array", "items": {"type": "string"}},
+        "source_origin": {"type": "string"},
+        "description": {"type": "string"},
+        "code_links": {"type": "array", "items": {"type": "string"}},
+        "test_links": {"type": "array", "items": {"type": "string"}},
+        "code_links_count": {"type": "integer", "minimum": 0},
+        "test_links_count": {"type": "integer", "minimum": 0},
+        "coverage_status": {
+          "enum": ["Covered", "Uncovered", "Missing Code", "Missing Test"]
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_id", "kind", "source_file", "line"],
+      "properties": {
+        "target_id": {"type": "string"},
+        "kind": {"enum": ["source_code", "automated_test"]},
+        "source_file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 0}
+      }
+    },
+    "matrix_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "layer",
+        "title",
+        "parents",
+        "specs",
+        "code_links_count",
+        "test_links_count",
+        "status"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "layer": {"type": "string"},
+        "title": {"type": "string"},
+        "parents": {"type": "array", "items": {"type": "string"}},
+        "specs": {"type": "array", "items": {"type": "string"}},
+        "code_links_count": {"type": "integer", "minimum": 0},
+        "test_links_count": {"type": "integer", "minimum": 0},
+        "status": {
+          "enum": ["Covered", "Uncovered", "Missing Code", "Missing Test"]
+        }
+      }
+    },
+    "tree_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "layer"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "layer": {"type": "string"},
+        "parents": {"type": "array", "items": {"type": "string"}},
+        "children": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/tree_node"}
+        },
+        "links": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/tree_link"}
+        }
+      }
+    },
+    "tree_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target_id", "source_file", "line"],
+      "properties": {
+        "kind": {"type": "string"},
+        "target_id": {"type": "string"},
+        "source_file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

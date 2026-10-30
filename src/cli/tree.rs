@@ -5,14 +5,14 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-
-use crate::cli::output::{write_buffered_stdout, StreamEnvironment, UniversalEnvelope};
+use crate::cli::output::{write_buffered_stdout, StreamEnvironment};
 use crate::cli::pipeline::load_workspace_graph_ext;
 use crate::error::{CliError, GraphError};
 use crate::graph::model::TraceabilityGraph;
 use crate::graph::validator::{validate_graph, ValidationOptions};
 use crate::model::{NodeId, TraceNode};
+use crate::render::render_json;
+use crate::report::{Report, ReportTreeLink, ReportTreeNode};
 
 /// Options configuring `xtrc tree` execution.
 #[derive(Debug, Clone, Default)]
@@ -36,44 +36,9 @@ pub struct TreeOptions<'a> {
 }
 
 /// JSON representation of a node in the tree hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TreeNodeJson {
-    /// Node identifier.
-    pub id: String,
-    /// Node title.
-    pub title: String,
-    /// Node lifecycle layer.
-    pub layer: String,
-    /// Parent identifiers.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parents: Vec<String>,
-    /// Child specification nodes.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub children: Vec<TreeNodeJson>,
-    /// Leaf source code and test verification links.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<TreeLinkJson>,
-}
-
+pub type TreeNodeJson = ReportTreeNode;
 /// JSON representation of a leaf trace link.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TreeLinkJson {
-    /// Link classification kind ("source_code" or "automated_test").
-    pub kind: String,
-    /// Target node identifier.
-    pub target_id: String,
-    /// Originating source file.
-    pub source_file: String,
-    /// 1-indexed line number.
-    pub line: usize,
-}
-
-/// JSON payload structure for `tree --json`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TreePayload {
-    /// Hierarchical tree nodes.
-    pub tree: Vec<TreeNodeJson>,
-}
+pub type TreeLinkJson = ReportTreeLink;
 
 /// Executes tree visualization.
 pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
@@ -82,6 +47,15 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
 
     let (_root, config, graph) =
         load_workspace_graph_ext(options.root, options.config_path, options.verbose)?;
+    let validation = validate_graph(
+        &graph,
+        &ValidationOptions {
+            require_test_coverage: config.validation.require_test_coverage,
+            layer_model: config.layers.clone(),
+            ..Default::default()
+        },
+    );
+    let mut report = Report::from_graph(&graph, validation, "tree", &config.layers);
 
     // 1. Resolve anchor node if specified
     let starting_nodes: Vec<&TraceNode> = match options.id {
@@ -113,69 +87,31 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
     };
 
     let mut cycle_detected = false;
+    let mut tree_nodes = Vec::new();
+    let builder = TreeJsonBuilder {
+        graph: &graph,
+        reverse: options.reverse,
+        max_depth: options.depth,
+        layers: &config.layers,
+    };
+    for root in &starting_nodes {
+        let mut visited = Vec::new();
+        let json_node = builder.build(root, 0, &mut visited, &mut cycle_detected);
+        tree_nodes.push(json_node);
+    }
+    report.tree = tree_nodes;
+    if cycle_detected {
+        report.status = "fail".to_string();
+    }
 
     // 2. Render JSON or Text
     if options.json {
-        let mut tree_nodes = Vec::new();
-        let builder = TreeJsonBuilder {
-            graph: &graph,
-            reverse: options.reverse,
-            max_depth: options.depth,
-            layers: &config.layers,
-        };
-        for root in &starting_nodes {
-            let mut visited = Vec::new();
-            let json_node = builder.build(root, 0, &mut visited, &mut cycle_detected);
-            tree_nodes.push(json_node);
-        }
-
-        let val_report = validate_graph(
-            &graph,
-            &ValidationOptions {
-                require_test_coverage: config.validation.require_test_coverage,
-                layer_model: config.layers.clone(),
-                ..Default::default()
-            },
-        );
-        let status = if !cycle_detected && val_report.is_success(false) {
-            "pass"
-        } else {
-            "fail"
-        };
-
-        let envelope = UniversalEnvelope::new(
-            "tree",
-            status,
-            val_report.statistics,
-            TreePayload { tree: tree_nodes },
-        );
-        envelope.print_stdout()?;
+        let json = render_json(&report).map_err(|e| CliError::InvalidArguments {
+            reason: format!("JSON serialization error: {e}"),
+        })?;
+        write_buffered_stdout(&format!("{json}\n"))?;
     } else {
-        let mut output_buf = String::with_capacity(4096);
-        for (i, root) in starting_nodes.iter().enumerate() {
-            if i > 0 {
-                output_buf.push('\n');
-            }
-            let layer_name = config
-                .layers
-                .name_for_layer(root.layer)
-                .unwrap_or(root.layer.as_str());
-            let _ = writeln!(output_buf, "{}: {} ({})", root.id, root.title, layer_name);
-            if options.depth != Some(0) {
-                let mut walker = TreeWalker {
-                    graph: &graph,
-                    reverse: options.reverse,
-                    max_depth: options.depth,
-                    path_stack: vec![root.id.clone()],
-                    cycle_detected: false,
-                    out: &mut output_buf,
-                    layers: &config.layers,
-                };
-                walker.render_branches(root, 1, "");
-                cycle_detected |= walker.cycle_detected;
-            }
-        }
-        write_buffered_stdout(&output_buf)?;
+        write_buffered_stdout(&render_tree_text(&report))?;
     }
 
     // 3. Cycle defect checking
@@ -200,153 +136,62 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Recursion state for rendering a text tree: fixed traversal settings plus the
-/// active ancestor path (for cycle detection), whether a cycle was seen, and a shared output buffer.
-struct TreeWalker<'g, 'b> {
-    graph: &'g TraceabilityGraph,
-    reverse: bool,
-    max_depth: Option<usize>,
-    path_stack: Vec<NodeId>,
-    cycle_detected: bool,
-    out: &'b mut String,
-    layers: &'b crate::model::LayerModel,
-}
-
-impl TreeWalker<'_, '_> {
-    fn render_branches(&mut self, current: &TraceNode, current_depth: usize, prefix: &str) {
-        let graph = self.graph;
-        let reverse = self.reverse;
-        let max_depth = self.max_depth;
-        if let Some(limit) = max_depth {
-            if current_depth > limit {
-                return;
-            }
-        }
-
-        if reverse {
-            // Upward: visit parents
-            let parents = graph.parents_of(&current.id);
-            let total = parents.len();
-            for (idx, parent_id) in parents.iter().enumerate() {
-                let is_last = idx + 1 == total;
-                let branch = if is_last { "└── " } else { "├── " };
-                let next_prefix = if is_last {
-                    format!("{prefix}    ")
-                } else {
-                    format!("{prefix}│   ")
-                };
-
-                if self.path_stack.contains(parent_id) {
-                    self.cycle_detected = true;
-                    let mut chain: Vec<String> =
-                        self.path_stack.iter().map(|id| id.to_string()).collect();
-                    chain.push(parent_id.to_string());
-                    let _ = writeln!(
-                        self.out,
-                        "{prefix}{branch}{parent_id} (cycle: {})",
-                        chain.join(" -> ")
-                    );
-                    continue;
-                }
-
-                if let Some(parent_node) = graph.get_node(parent_id) {
-                    let _ = writeln!(
-                        self.out,
-                        "{prefix}{branch}{}: {} ({})",
-                        parent_node.id, parent_node.title, parent_node.layer
-                    );
-                    self.path_stack.push(parent_id.clone());
-                    self.render_branches(parent_node, current_depth + 1, &next_prefix);
-                    self.path_stack.pop();
-                } else {
-                    let _ = writeln!(self.out, "{prefix}{branch}{parent_id} [missing]");
-                }
-            }
-        } else {
-            // Downward: visit spec children and leaf code/test links
-            let children = graph.children_of(&current.id);
-            let code_links = graph.code_links_for(&current.id);
-            let test_links = graph.test_links_for(&current.id);
-            let total_items = children.len() + code_links.len() + test_links.len();
-
-            let mut item_idx = 0usize;
-
-            // 1. Spec children
-            for child_id in children {
-                item_idx += 1;
-                let is_last = item_idx == total_items;
-                let branch = if is_last { "└── " } else { "├── " };
-                let next_prefix = if is_last {
-                    format!("{prefix}    ")
-                } else {
-                    format!("{prefix}│   ")
-                };
-
-                if self.path_stack.contains(child_id) {
-                    self.cycle_detected = true;
-                    let mut chain: Vec<String> =
-                        self.path_stack.iter().map(|id| id.to_string()).collect();
-                    chain.push(child_id.to_string());
-                    let _ = writeln!(
-                        self.out,
-                        "{prefix}{branch}{child_id} (cycle: {})",
-                        chain.join(" -> ")
-                    );
-                    continue;
-                }
-
-                if let Some(child_node) = graph.get_node(child_id) {
-                    let _ = writeln!(
-                        self.out,
-                        "{prefix}{branch}{}: {} ({})",
-                        child_node.id,
-                        child_node.title,
-                        self.layers
-                            .name_for_layer(child_node.layer)
-                            .unwrap_or(child_node.layer.as_str())
-                    );
-                    self.path_stack.push(child_id.clone());
-                    self.render_branches(child_node, current_depth + 1, &next_prefix);
-                    self.path_stack.pop();
-                } else {
-                    let _ = writeln!(self.out, "{prefix}{branch}{child_id} [missing]");
-                }
-            }
-
-            // 2. Code links
-            for link in code_links {
-                item_idx += 1;
-                let is_last = item_idx == total_items;
-                let branch = if is_last { "└── " } else { "├── " };
-                let _ = writeln!(
-                    self.out,
-                    "{prefix}{branch}[code] {}:{}",
-                    link.source_file.display(),
-                    link.line
-                );
-            }
-
-            // 3. Test links
-            for link in test_links {
-                item_idx += 1;
-                let is_last = item_idx == total_items;
-                let branch = if is_last { "└── " } else { "├── " };
-                let _ = writeln!(
-                    self.out,
-                    "{prefix}{branch}[test] {}:{}",
-                    link.source_file.display(),
-                    link.line
-                );
-            }
-        }
-    }
-}
-
 struct TreeJsonBuilder<'g, 'm> {
     graph: &'g TraceabilityGraph,
     reverse: bool,
     max_depth: Option<usize>,
     layers: &'m crate::model::LayerModel,
+}
+
+fn render_tree_text(report: &Report) -> String {
+    let mut output = String::with_capacity(4096);
+    for (index, root) in report.tree.iter().enumerate() {
+        if index > 0 {
+            output.push('\n');
+        }
+        let _ = writeln!(output, "{}: {} ({})", root.id, root.title, root.layer);
+        render_tree_branches(root, "", &mut output);
+    }
+    output
+}
+
+fn render_tree_branches(node: &TreeNodeJson, prefix: &str, output: &mut String) {
+    let total = node.children.len() + node.links.len();
+    let mut item_index = 0;
+    for child in &node.children {
+        item_index += 1;
+        let is_last = item_index == total;
+        let branch = if is_last { "└── " } else { "├── " };
+        let next_prefix = if is_last {
+            format!("{prefix}    ")
+        } else {
+            format!("{prefix}│   ")
+        };
+        let _ = writeln!(
+            output,
+            "{prefix}{branch}{}: {} ({})",
+            child.id, child.title, child.layer
+        );
+        render_tree_branches(child, &next_prefix, output);
+    }
+
+    for kind in ["source_code", "automated_test"] {
+        for link in node.links.iter().filter(|link| link.kind == kind) {
+            item_index += 1;
+            let is_last = item_index == total;
+            let branch = if is_last { "└── " } else { "├── " };
+            let label = if kind == "source_code" {
+                "code"
+            } else {
+                "test"
+            };
+            let _ = writeln!(
+                output,
+                "{prefix}{branch}[{label}] {}:{}",
+                link.source_file, link.line
+            );
+        }
+    }
 }
 
 impl TreeJsonBuilder<'_, '_> {

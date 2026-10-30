@@ -349,30 +349,41 @@ The system is organized into decoupled modules with strict boundaries:
 ### SPEC-CLI-OUTPUT: Standard Unix Stream Separation & Universal JSON Schemas
 - **ID**: SPEC-CLI-OUTPUT
 - **Parent Requirements**: REQ-FMT-JSON, REQ-UNIX-STREAMS, REQ-EXIT-CODES, US-JSON-01, US-UNIX-01, US-EXIT-01
-- **Component Target**: src/cli/output.rs
+- **Component Target**: src/report.rs, src/render.rs, src/cli/output.rs, docs/report.schema.json
 - **Verification Target**: tests/cli/test_output.rs
 - **Technical Specification**:
   - Pure Stream Protocol:
     - `stdout`: Pure structured data only (tables, markdown, CSV, tree text, or JSON payload). Never contaminated by logs or debug statements.
     - `stderr`: Progress indicators, spinners, scan telemetry, warnings, and error diagnostics.
-  - Universal JSON Schema (`--json`):
+  - Shared deterministic JSON Report (`--json`, `matrix --json`, `tree --json`, `export --format json`) conforms to [report.schema.json](./report.schema.json). The common envelope includes statistics, nodes with canonical coverage status, links, violations, and optional command views. No execution timestamp is emitted.
     ```json
     {
       "schema_version": "1.0.0",
       "command": "check",
-      "timestamp": "2026-10-24T17:30:00Z",
       "status": "pass",
       "statistics": {
-        "total_nodes": 49,
-        "specs_count": 16,
-        "code_links": 28,
-        "test_links": 31,
+        "total_nodes": 0,
+        "specs_count": 0,
+        "requirements_count": 0,
+        "covered_nodes": 0,
+        "code_links": 0,
+        "test_links": 0,
         "broken_links": 0,
         "cycles_count": 0,
         "orphan_nodes": 0,
         "coverage_percent": 100.0
       },
-      "violations": []
+      "nodes": [],
+      "links": [],
+      "violations": [],
+      "epic_coverage": [],
+      "rows": [],
+      "total_rows": 0,
+      "tree": [],
+      "title": "Traceability Compliance Audit Report",
+      "coverage_layer_name": "Requirement",
+      "spec_layer_name": "TechnicalSpec",
+      "default_layer_names": true
     }
     ```
   - Exit Code Mapping:

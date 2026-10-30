@@ -2,6 +2,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::collections::BTreeSet;
 use tempfile::tempdir;
 
 fn setup_output_workspace(dir: &std::path::Path) {
@@ -47,17 +48,39 @@ status: approved
 - **ID**: SPEC-OUT-01
 - **Parent**: REQ-OUT-01
 - **Type**: TechnicalSpec
+
+### REQ-OUT-02: Missing Test Requirement
+- **ID**: REQ-OUT-02
+- **Parent**: VIS-OUT
+- **Type**: Requirement
+
+### SPEC-OUT-02: Technical Spec Without Test
+- **ID**: SPEC-OUT-02
+- **Parent**: REQ-OUT-02
+- **Type**: TechnicalSpec
+
+### REQ-OUT-03: Missing Code Requirement
+- **ID**: REQ-OUT-03
+- **Parent**: VIS-OUT
+- **Type**: Requirement
+
+### REQ-OUT-04: Uncovered Requirement
+- **ID**: REQ-OUT-04
+- **Parent**: VIS-OUT
+- **Type**: Requirement
 "#;
     std::fs::write(dir.join("docs/spec.md"), spec).expect("write spec");
 
     let code = r#"//! Code
 // @@trace SPEC-OUT-01, REQ-OUT-01
+// @@trace SPEC-OUT-02, REQ-OUT-02
 pub fn f() {}
 "#;
     std::fs::write(dir.join("src/lib.rs"), code.replace("@@trace", "@trace")).expect("write code");
 
     let test = r#"//! Test
 // @@trace:test SPEC-OUT-01, REQ-OUT-01
+// @@trace:test REQ-OUT-03
 #[test]
 fn t() {}
 "#;
@@ -182,4 +205,55 @@ fn test_universal_json_schema_across_commands() {
     assert_eq!(j4["schema_version"], "1.0.0");
     assert_eq!(j4["command"], "export");
     assert!(j4.get("statistics").is_some());
+
+    let reports = [&j1, &j2, &j3, &j4];
+    let expected_keys: BTreeSet<_> = reports[0]
+        .as_object()
+        .expect("report object")
+        .keys()
+        .collect();
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../../docs/report.schema.json"))
+            .expect("valid published JSON Schema");
+    let required = schema["required"].as_array().expect("required fields");
+    for report in reports {
+        let object = report.as_object().expect("report object");
+        let actual_keys: BTreeSet<_> = object.keys().collect();
+        assert_eq!(actual_keys, expected_keys);
+        assert!(!object.contains_key("timestamp"));
+        for field in required {
+            let field = field.as_str().expect("schema field name");
+            assert!(object.contains_key(field), "missing schema field {field}");
+        }
+    }
+
+    let rows = j2["rows"].as_array().expect("matrix rows");
+    for (id, expected_status) in [
+        ("REQ-OUT-01", "Covered"),
+        ("REQ-OUT-02", "Missing Test"),
+        ("REQ-OUT-03", "Missing Code"),
+        ("REQ-OUT-04", "Uncovered"),
+    ] {
+        let expected = serde_json::Value::String(expected_status.to_string());
+        for report in reports {
+            let node = report["nodes"]
+                .as_array()
+                .expect("report nodes")
+                .iter()
+                .find(|node| node["id"] == id)
+                .expect("requirement node");
+            assert_eq!(
+                node["coverage_status"], expected,
+                "{id} in {}: {node}",
+                report["command"],
+            );
+        }
+        assert_eq!(
+            rows.iter()
+                .find(|row| row["id"] == id)
+                .expect("requirement matrix row")["status"],
+            expected,
+            "{id} matrix status"
+        );
+    }
 }

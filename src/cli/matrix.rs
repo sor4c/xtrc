@@ -5,16 +5,16 @@
 use std::path::Path;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
-
 use crate::cli::output::{
     is_terminal_stdout, render_aligned_table, render_csv, render_markdown_table,
-    write_buffered_stdout, MatrixFormat, StreamEnvironment, UniversalEnvelope,
+    write_buffered_stdout, MatrixFormat, StreamEnvironment,
 };
 use crate::cli::pipeline::load_workspace_graph_ext;
 use crate::error::CliError;
 use crate::graph::validator::{validate_graph, ValidationOptions};
 use crate::model::Layer;
+use crate::render::render_json;
+use crate::report::{Report, ReportMatrixRow};
 
 /// Options configuring `xtrc matrix` execution.
 #[derive(Debug, Clone, Default)]
@@ -36,32 +36,8 @@ pub struct MatrixOptions<'a> {
 }
 
 /// Structured row representation of a traceability matrix entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MatrixRow {
-    /// Item identifier.
-    pub id: String,
-    /// Item title.
-    pub title: String,
-    /// Upward parent identifiers.
-    pub parents: Vec<String>,
-    /// Downward child specification identifiers.
-    pub specs: Vec<String>,
-    /// Total source code implementation links.
-    pub code_links_count: usize,
-    /// Total automated test verification links.
-    pub test_links_count: usize,
-    /// Forward coverage status label ("Covered", "Uncovered", "Missing Code", "Missing Test").
-    pub status: String,
-}
-
-/// JSON payload structure for `matrix --json`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MatrixPayload {
-    /// Total rows emitted.
-    pub total_rows: usize,
-    /// Matrix rows.
-    pub rows: Vec<MatrixRow>,
-}
+/// Structured row representation of a traceability matrix entry.
+pub type MatrixRow = ReportMatrixRow;
 
 /// Executes matrix generation and rendering.
 pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
@@ -115,77 +91,43 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
         }
     };
 
-    // 3. Assemble matrix rows
-    let nodes = graph.nodes_by_layer(target_layer);
-    let child_layer = config.layers.layer_at(usize::from(target_layer.rank()));
-    let mut rows: Vec<MatrixRow> = Vec::new();
-
-    for node in nodes {
-        let parents: Vec<String> = graph
-            .parents_of(&node.id)
-            .iter()
-            .map(|p| p.to_string())
-            .collect();
-
-        let child_specs: Vec<&crate::model::TraceNode> = graph
-            .children_of(&node.id)
-            .iter()
-            .filter_map(|cid| graph.get_node(cid))
-            .filter(|n| Some(n.layer) == child_layer)
-            .collect();
-
-        let specs: Vec<String> = child_specs.iter().map(|n| n.id.to_string()).collect();
-
-        let direct_code = graph.code_links_for(&node.id).len();
-        let spec_code: usize = child_specs
-            .iter()
-            .map(|spec| graph.code_links_for(&spec.id).len())
-            .sum();
-        let total_code = direct_code + spec_code;
-
-        let direct_test = graph.test_links_for(&node.id).len();
-        let spec_test: usize = child_specs
-            .iter()
-            .map(|spec| graph.test_links_for(&spec.id).len())
-            .sum();
-        let total_test = direct_test + spec_test;
-
-        let status = if !config.validation.require_test_coverage {
-            if total_code > 0 {
-                "Covered"
-            } else {
-                "Missing Code"
-            }
-        } else {
-            match (total_code > 0, total_test > 0) {
-                (true, true) => "Covered",
-                (false, false) => "Uncovered",
-                (false, true) => "Missing Code",
-                (true, false) => "Missing Test",
-            }
-        };
-
-        if options.uncovered && status == "Covered" {
-            continue;
-        }
-
-        rows.push(MatrixRow {
-            id: node.id.to_string(),
-            title: node.title.clone(),
-            parents,
-            specs,
-            code_links_count: total_code,
-            test_links_count: total_test,
-            status: status.to_string(),
-        });
-    }
-
-    // 4. Render output to stdout
-    let layer_index = usize::from(target_layer.rank()).saturating_sub(1);
+    // 3. Build the canonical report once; matrix rows reuse its computed coverage.
+    let validation = validate_graph(
+        &graph,
+        &ValidationOptions {
+            require_test_coverage: config.validation.require_test_coverage,
+            layer_model: config.layers.clone(),
+            ..Default::default()
+        },
+    );
+    let mut report = Report::from_graph(&graph, validation, "matrix", &config.layers);
     let target_name = config
         .layers
         .name_for_layer(target_layer)
         .unwrap_or("Layer");
+    report.rows = report
+        .nodes
+        .iter()
+        .filter(|node| {
+            node.layer == target_name
+                && (!options.uncovered || node.coverage_status.as_str() != "Covered")
+        })
+        .map(|node| ReportMatrixRow {
+            id: node.id.clone(),
+            layer: node.layer.clone(),
+            title: node.title.clone(),
+            parents: node.parents.clone(),
+            specs: node.specs.clone(),
+            code_links_count: node.code_links_count,
+            test_links_count: node.test_links_count,
+            status: node.coverage_status.as_str().to_string(),
+        })
+        .collect();
+    report.total_rows = report.rows.len();
+    let rows = &report.rows;
+
+    // 4. Render output to stdout
+    let layer_index = usize::from(target_layer.rank()).saturating_sub(1);
     let parent_header = layer_index
         .checked_sub(1)
         .and_then(|index| config.layers.layers.get(index))
@@ -210,28 +152,10 @@ pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
 
     match format {
         MatrixFormat::Json => {
-            let val_report = validate_graph(
-                &graph,
-                &ValidationOptions {
-                    require_test_coverage: config.validation.require_test_coverage,
-                    layer_model: config.layers.clone(),
-                    ..Default::default()
-                },
-            );
-            let envelope = UniversalEnvelope::new(
-                "matrix",
-                if val_report.is_success(false) {
-                    "pass"
-                } else {
-                    "fail"
-                },
-                val_report.statistics,
-                MatrixPayload {
-                    total_rows: rows.len(),
-                    rows,
-                },
-            );
-            envelope.print_stdout()?;
+            let json = render_json(&report).map_err(|e| CliError::InvalidArguments {
+                reason: format!("JSON serialization error: {e}"),
+            })?;
+            write_buffered_stdout(&format!("{json}\n"))?;
         }
         MatrixFormat::Markdown => {
             let row_cells: Vec<Vec<String>> = rows
@@ -367,6 +291,7 @@ mod tests {
     fn test_matrix_row_creation() {
         let row = MatrixRow {
             id: "REQ-01".to_string(),
+            layer: "Requirement".to_string(),
             title: "Verification".to_string(),
             parents: vec!["US-01".to_string()],
             specs: vec!["SPEC-01".to_string()],
