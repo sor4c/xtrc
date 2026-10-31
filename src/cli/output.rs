@@ -58,39 +58,19 @@ impl fmt::Display for OutputFormat {
 /// Supported presentation formats for the matrix subcommand (type alias for consistency).
 pub type MatrixFormat = OutputFormat;
 
-/// Runtime stream environment detecting TTY presence and managing ANSI color states.
-#[derive(Debug, Clone, Copy)]
-pub struct StreamEnvironment {
-    /// True if standard output is connected to an interactive terminal.
-    pub stdout_is_terminal: bool,
-    /// True if standard error is connected to an interactive terminal.
-    pub stderr_is_terminal: bool,
-}
+/// Runtime stream probe managing ANSI color behavior for redirected output.
+pub(crate) struct StreamEnvironment;
 
 impl StreamEnvironment {
-    /// Probes stdout and stderr streams and configures global color overrides.
+    /// Probes stdout and configures global color overrides for redirected output.
     pub fn probe() -> Self {
         let stdout_is_terminal = io::stdout().is_terminal();
-        let stderr_is_terminal = io::stderr().is_terminal();
 
         if !stdout_is_terminal {
             colored::control::set_override(false);
         }
 
-        Self {
-            stdout_is_terminal,
-            stderr_is_terminal,
-        }
-    }
-
-    /// Determines the default output format for matrix command:
-    /// `Table` on interactive TTY, `Markdown` when stdout is piped/redirected.
-    pub fn default_matrix_format(&self) -> OutputFormat {
-        if self.stdout_is_terminal {
-            OutputFormat::Table
-        } else {
-            OutputFormat::Markdown
-        }
+        Self
     }
 }
 
@@ -207,146 +187,6 @@ pub fn render_aligned_table(headers: &[&str], rows: &[Vec<String>]) -> String {
     }
 
     out
-}
-
-/// Multi-column 2D tabular formatter supporting Terminal, Markdown, and CSV outputs.
-#[derive(Debug, Clone, Default)]
-pub struct TabularFormatter {
-    headers: Vec<String>,
-    rows: Vec<Vec<String>>,
-}
-
-impl TabularFormatter {
-    /// Creates a new tabular formatter with specified header labels.
-    pub fn new(headers: Vec<String>) -> Self {
-        Self {
-            headers,
-            rows: Vec::new(),
-        }
-    }
-
-    /// Appends a data row to the table.
-    pub fn add_row(&mut self, row: Vec<String>) {
-        self.rows.push(row);
-    }
-
-    /// Renders the table in GitHub-flavored Markdown.
-    pub fn render_markdown(&self) -> String {
-        let headers: Vec<&str> = self.headers.iter().map(|s| s.as_str()).collect();
-        render_markdown_table(&headers, &self.rows)
-    }
-
-    /// Renders the table in RFC 4180 CSV format.
-    pub fn render_csv(&self) -> String {
-        let headers: Vec<&str> = self.headers.iter().map(|s| s.as_str()).collect();
-        render_csv(&headers, &self.rows)
-    }
-
-    /// Renders the table for interactive terminal display with box-drawing borders.
-    pub fn render_terminal_table(&self) -> String {
-        let col_count = self.headers.len();
-        if col_count == 0 {
-            return String::new();
-        }
-
-        let mut widths = vec![0; col_count];
-        for (i, h) in self.headers.iter().enumerate() {
-            widths[i] = h.chars().count();
-        }
-        for row in &self.rows {
-            for (i, cell) in row.iter().enumerate() {
-                if i < col_count {
-                    widths[i] = widths[i].max(cell.chars().count());
-                }
-            }
-        }
-
-        let mut out = String::new();
-
-        // Top border: ┌───┬───┐
-        out.push('┌');
-        for (i, &w) in widths.iter().enumerate() {
-            out.push_str(&"─".repeat(w + 2));
-            if i + 1 < col_count {
-                out.push('┬');
-            }
-        }
-        out.push_str("┐\n");
-
-        // Header: │ Title │
-        out.push('│');
-        for (i, h) in self.headers.iter().enumerate() {
-            out.push_str(&format!(" {:<w$} │", h, w = widths[i]));
-        }
-        out.push('\n');
-
-        // Middle separator: ├───┼───┤
-        out.push('├');
-        for (i, &w) in widths.iter().enumerate() {
-            out.push_str(&"─".repeat(w + 2));
-            if i + 1 < col_count {
-                out.push('┼');
-            }
-        }
-        out.push_str("┤\n");
-
-        // Data rows
-        for row in &self.rows {
-            out.push('│');
-            for (i, width) in widths.iter().enumerate() {
-                let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
-                out.push_str(&format!(" {:<w$} │", cell, w = *width));
-            }
-            out.push('\n');
-        }
-
-        // Bottom border: └───┴───┘
-        out.push('└');
-        for (i, &w) in widths.iter().enumerate() {
-            out.push_str(&"─".repeat(w + 2));
-            if i + 1 < col_count {
-                out.push('┴');
-            }
-        }
-        out.push_str("┘\n");
-
-        out
-    }
-}
-
-/// Pure Unix stream emission helpers.
-pub struct StreamEmitter;
-
-impl StreamEmitter {
-    /// Writes pure payload data to `stdout` followed by newline.
-    pub fn write_stdout(data: &str) -> Result<(), CliError> {
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-        write!(handle, "{data}").map_err(CliError::Io)?;
-        if !data.ends_with('\n') {
-            writeln!(handle).map_err(CliError::Io)?;
-        }
-        handle.flush().map_err(CliError::Io)?;
-        Ok(())
-    }
-
-    /// Writes diagnostic or progress message to `stderr`.
-    pub fn write_stderr(msg: &str) {
-        let stderr = io::stderr();
-        let mut handle = stderr.lock();
-        let _ = writeln!(handle, "{msg}");
-        let _ = handle.flush();
-    }
-
-    /// Writes diagnostic warning notice to `stderr`.
-    pub fn write_warning(msg: &str) {
-        Self::write_stderr(&format!("[WARN] {msg}"));
-    }
-
-    /// Writes fatal error message to `stderr`.
-    pub fn write_error(msg: &str) {
-        Self::write_stderr(&format!("Error: {msg}"));
-    }
 }
 
 #[cfg(test)]

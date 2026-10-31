@@ -1,6 +1,6 @@
 [package]
 name = "xtrc"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["xtrc contributors"]
 description = "Fast, plain-text traceability CLI and 7-layer DAG engine in Rust"
@@ -59,34 +59,6 @@ path = "tests/cli/test_export.rs"
 [[test]]
 name = "test_output"
 path = "tests/cli/test_output.rs"
-
-[[test]]
-name = "test_discovery"
-path = "tests/config/test_discovery.rs"
-
-[[test]]
-name = "test_traversal"
-path = "tests/scanner/test_traversal.rs"
-
-[[test]]
-name = "test_identifier"
-path = "tests/model/test_identifier.rs"
-
-[[test]]
-name = "test_document"
-path = "tests/parser/test_document.rs"
-
-[[test]]
-name = "test_comments"
-path = "tests/scanner/test_comments.rs"
-
-[[test]]
-name = "test_graph"
-path = "tests/graph/mod.rs"
-
-[[test]]
-name = "test_benchmarks"
-path = "tests/perf/test_benchmarks.rs"
 
 [[test]]
 name = "e2e"

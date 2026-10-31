@@ -58,7 +58,7 @@ schema_version: "1.0.0"
 - **Parent**: US-CICD-01, US-PERF-01
 - **Type**: Non-Functional Requirement
 - **Intent & Value**: Continuously measure real CLI and engine execution latencies during CI/CD runs and automatically block pull requests or deliveries if any performance requirement (`REQ-NFR-PERF`, `REQ-NFR-MEM`, `REQ-NFR-SCALE`, `REQ-NFR-DETERM`) regresses or is unfulfilled.
-- **Observable Contract & Behavior**: Both `.github/workflows/ci.yml` and `.github/workflows/delivery.yml` execute the automated NFR benchmark suite (`cargo test --test test_benchmarks`) and the release-binary performance measurement harness (`bash scripts/measure-perf.sh`), generating a structured JSON performance report (`dist/perf-report.json`) and Markdown latency summary while enforcing strict SLA thresholds (`<= 500ms` for 1,000-file workspace verification, `<= 200ms` for self-repository CLI operations).
+- **Observable Contract & Behavior**: Both `.github/workflows/ci.yml` and `.github/workflows/delivery.yml` execute the automated NFR benchmark suite (`cargo test --all-targets --all-features`) and the release-binary performance measurement harness (`bash scripts/measure-perf.sh`), generating a structured JSON performance report (`dist/perf-report.json`) and Markdown latency summary while enforcing strict SLA thresholds (`<= 500ms` for 1,000-file workspace verification, `<= 200ms` for self-repository CLI operations).
 - **Acceptance Criteria**: CI and CD workflows fail with a non-zero exit code if any NFR benchmark or SLA threshold fails; `perf-report.json` records measured latencies, SLA budgets, and pass/fail status across all benchmarked workloads.
 
 ## 3. Layer 6: Technical Specifications (SPEC-*)
@@ -67,7 +67,7 @@ schema_version: "1.0.0"
 - **Parent**: REQ-NFR-PERF, US-PERF-01
 - **Type**: TechnicalSpec
 - **Component Target**: src/scanner/comments.rs, src/scanner/traversal.rs, src/cli/output.rs, src/cli/tree.rs, src/cli/matrix.rs, src/cli/export.rs, src/cli/verify.rs
-- **Verification Target**: tests/perf/test_benchmarks.rs, tests/scanner/test_comments.rs, tests/cli/test_output.rs
+- **Verification Target**: src/report/internal_benchmarks.rs, src/scanner/comments_internal_tests.rs, tests/cli/test_output.rs
 - **Technical Specification**:
   - Comment scanning literal `@trace` pre-filtering rejecting non-matching lines with zero regex invocations.
   - CLI output streams write through `write_buffered_stdout` (`BufWriter` over locked `stdout`).
@@ -78,9 +78,9 @@ schema_version: "1.0.0"
 - **Parent**: REQ-NFR-PERF, REQ-NFR-MEM, REQ-NFR-SCALE, REQ-NFR-DETERM, US-PERF-01
 - **Type**: TechnicalSpec
 - **Component Target**: src/cli/pipeline.rs, src/scanner/comments.rs, src/scanner/traversal.rs, src/graph/validator.rs
-- **Verification Target**: tests/perf/test_benchmarks.rs
+- **Verification Target**: src/report/internal_benchmarks.rs
 - **Technical Specification**:
-  - Dedicated integration benchmark test suite `tests/perf/test_benchmarks.rs` (`[[test]] name = "test_benchmarks"` in `Cargo.toml`) executed automatically during `cargo test --all-targets --all-features`.
+  - In-crate benchmark suite `src/report/internal_benchmarks.rs` executed as unit tests during `cargo test --all-targets --all-features`.
   - Verifies four quantitative NFR dimensions:
     1. **Sub-Second 1,000-File Pipeline Latency (`REQ-NFR-PERF`)**: Generates a realistic 1,000-file polyglot workspace across all 7 traceability layers and verifies end-to-end `load_workspace_graph`, `detect_cycles`, and `validate_graph` execution completes in `< 500ms`.
     2. **Bounded Binary Sniffing & Memory Efficiency (`REQ-NFR-MEM`)**: Verifies multi-megabyte binary files containing `0x00` within the initial 512-byte header are skipped in `< 25ms` without reading the full file payload, and verifies 1,000-file graph memory footprint remains `< 50 MiB`.
@@ -92,7 +92,7 @@ schema_version: "1.0.0"
 - **Parent**: REQ-CI-PERF, REQ-NFR-PERF, REQ-NFR-MEM, REQ-NFR-SCALE, REQ-NFR-DETERM, US-CICD-01, US-PERF-01
 - **Type**: TechnicalSpec
 - **Component Target**: scripts/measure-perf.sh, .github/workflows/ci.yml, .github/workflows/delivery.yml, src/cli/pipeline.rs
-- **Verification Target**: tests/perf/test_benchmarks.rs, tests/e2e/tier4_real_world.rs
+- **Verification Target**: src/report/internal_benchmarks.rs, tests/e2e/tier4_real_world.rs
 - **Technical Specification**:
   - Script Path: `scripts/measure-perf.sh [OUTPUT_JSON] [BINARY_PATH]`.
   - Measures release-binary wall-clock latency (in milliseconds) and enforces hard SLA budgets across five benchmark workloads:

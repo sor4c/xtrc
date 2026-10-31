@@ -4,9 +4,8 @@
 
 use std::str::FromStr;
 use xtrc::error::GraphError;
-use xtrc::model::{
-    validate_parent_relationship, FileOrigin, Layer, LinkKind, NodeId, TraceLink, TraceNode,
-};
+use xtrc::model::identifier::validate_parent_relationship;
+use xtrc::model::{FileOrigin, Layer, LinkKind, NodeId, TraceLink, TraceNode};
 
 #[test]
 fn test_integration_full_7_layer_dag_linkage() {

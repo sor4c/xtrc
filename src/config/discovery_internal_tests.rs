@@ -2,7 +2,8 @@
 
 use std::fs;
 use tempfile::tempdir;
-use xtrc::config::{discover_workspace, find_project_root, WorkspaceConfig};
+use xtrc::config::discovery::discover_workspace;
+use xtrc::config::WorkspaceConfig;
 use xtrc::error::ConfigError;
 
 #[test]
@@ -11,7 +12,8 @@ fn test_find_project_root_from_cwd() {
     let cfg_path = temp.path().join(".xtrc.toml");
     fs::write(&cfg_path, WorkspaceConfig::default_starter_toml()).expect("write config");
 
-    let (root, config) = find_project_root(temp.path(), None).expect("find_project_root failed");
+    let (root, config) =
+        discover_workspace(temp.path(), None, None).expect("discover_workspace failed");
     assert_eq!(root, temp.path());
     assert_eq!(config.project.name, "xtrc");
     assert_eq!(config.version, "1");
@@ -26,7 +28,8 @@ fn test_find_project_root_from_nested() {
     let nested = temp.path().join("deep").join("nested").join("subfolder");
     fs::create_dir_all(&nested).expect("create_dir_all failed");
 
-    let (root, config) = find_project_root(&nested, None).expect("find_project_root failed");
+    let (root, config) =
+        discover_workspace(&nested, None, None).expect("discover_workspace failed");
     assert_eq!(root, temp.path());
     assert_eq!(config.project.name, "xtrc");
 }
@@ -37,7 +40,8 @@ fn test_find_project_root_git_fallback() {
     let git_dir = temp.path().join(".git");
     fs::create_dir_all(&git_dir).expect("create .git failed");
 
-    let (root, config) = find_project_root(temp.path(), None).expect("find_project_root failed");
+    let (root, config) =
+        discover_workspace(temp.path(), None, None).expect("discover_workspace failed");
     assert_eq!(root, temp.path());
     assert_eq!(config.project.name, "xtrc");
 }
@@ -85,7 +89,7 @@ fn test_invalid_toml_error() {
     let cfg_path = temp.path().join(".xtrc.toml");
     fs::write(&cfg_path, "not a valid [toml = syntax").expect("write bad toml");
 
-    let err = find_project_root(temp.path(), None).unwrap_err();
+    let err = discover_workspace(temp.path(), None, None).unwrap_err();
     match err {
         ConfigError::InvalidToml { path, .. } => {
             assert_eq!(path, cfg_path);

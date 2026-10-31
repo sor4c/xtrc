@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 use xtrc::error::GraphError;
-use xtrc::graph::TraceabilityGraph;
+use xtrc::graph::model::TraceabilityGraph;
 use xtrc::model::{FileOrigin, Layer, LinkKind, NodeId, TraceLink, TraceNode};
 
 fn make_origin(path: &str, line: usize) -> FileOrigin {

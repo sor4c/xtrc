@@ -237,7 +237,7 @@ pub struct EpicCoverage {
 
 /// Validation result produced by the 4-stage validation engine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ValidationReport {
+pub(crate) struct ValidationReport {
     /// High-level pass/fail outcome status ("pass" or "fail").
     pub status: String,
     /// Summary numerical metrics.
@@ -270,6 +270,7 @@ impl ValidationReport {
 
     /// Returns the deterministic process exit code: `0` for success, `1` for violation.
     #[inline]
+    #[cfg(test)]
     pub fn exit_code(&self, strict: bool) -> i32 {
         if self.is_success(strict) {
             0

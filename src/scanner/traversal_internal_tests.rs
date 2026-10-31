@@ -7,8 +7,13 @@ use tempfile::tempdir;
 
 use xtrc::config::WorkspaceConfig;
 use xtrc::scanner::traversal::{
-    categorize_files, glob_match, is_binary_file, sniff_binary, walk_workspace, walk_workspace_sync,
+    build_glob_set, categorize_files, is_binary_file, sniff_binary, walk_workspace,
 };
+
+fn glob_match(pattern: &str, path: &str) -> bool {
+    let patterns = [pattern.to_string()];
+    build_glob_set(&patterns).is_match(path.replace('\\', "/"))
+}
 
 #[test]
 fn test_binary_sniff_empty_file() {
@@ -109,7 +114,7 @@ fn test_traversal_respects_root_gitignore() {
     fs::write(root.join("build/artifact.rs"), "fn artifact() {}").expect("write failed");
 
     let config = WorkspaceConfig::default();
-    let paths = walk_workspace_sync(root, Some(&config)).expect("walk failed");
+    let paths = walk_workspace(root, &config).expect("walk failed");
 
     assert!(
         paths.iter().any(|p| p.ends_with("tracked.rs")),
@@ -137,7 +142,7 @@ fn test_traversal_respects_nested_gitignore() {
     fs::write(sub.join("app.log"), "log line").expect("write failed");
 
     let config = WorkspaceConfig::default();
-    let paths = walk_workspace_sync(root, Some(&config)).expect("walk failed");
+    let paths = walk_workspace(root, &config).expect("walk failed");
 
     assert!(
         paths.iter().any(|p| p.ends_with("valid.rs")),
@@ -167,7 +172,7 @@ fn test_traversal_skips_builtin_target_and_node_modules() {
     fs::write(src.join("lib.rs"), "pub fn ok() {}").expect("write failed");
 
     let config = WorkspaceConfig::default();
-    let paths = walk_workspace_sync(root, Some(&config)).expect("walk failed");
+    let paths = walk_workspace(root, &config).expect("walk failed");
 
     assert!(
         paths.iter().any(|p| p.ends_with("lib.rs")),
@@ -197,7 +202,7 @@ fn test_traversal_skips_builtin_agents_teamwork() {
     fs::write(docs.join("specs.md"), "# Spec").expect("write failed");
 
     let config = WorkspaceConfig::default();
-    let paths = walk_workspace_sync(root, Some(&config)).expect("walk failed");
+    let paths = walk_workspace(root, &config).expect("walk failed");
 
     assert!(
         paths.iter().any(|p| p.ends_with("specs.md")),
@@ -222,7 +227,7 @@ fn test_traversal_skips_binary_files_automatically() {
     .expect("write failed");
 
     let config = WorkspaceConfig::default();
-    let paths = walk_workspace_sync(root, Some(&config)).expect("walk failed");
+    let paths = walk_workspace(root, &config).expect("walk failed");
 
     assert!(
         paths.iter().any(|p| p.ends_with("hello.rs")),
@@ -412,9 +417,12 @@ fn test_categorize_files_polyglot_language_support() {
     assert!(categorized.tests.contains(&test_py));
 
     assert_eq!(
-        categorized.all_text.len(),
+        categorized.specs.len()
+            + categorized.code.len()
+            + categorized.tests.len()
+            + categorized.other.len(),
         11,
-        "All candidate text files must be in all_text"
+        "Each candidate text file must be assigned to exactly one category"
     );
 }
 
@@ -521,27 +529,18 @@ fn test_end_to_end_walk_and_categorize_polyglot() {
     config.tests.include = vec!["tests/**".to_string()];
 
     // 5. Execute walk and categorize
-    let discovered = walk_workspace_sync(root, Some(&config)).expect("walk failed");
+    let discovered = walk_workspace(root, &config).expect("walk failed");
     let categorized = categorize_files(root, &discovered, &config);
 
     // 6. Verify pipeline outcome
-    assert!(!categorized
-        .all_text
-        .iter()
-        .any(|p| p.ends_with("artifact.rs")));
-    assert!(!categorized
-        .all_text
-        .iter()
-        .any(|p| p.ends_with("scratch.tmp")));
-    assert!(!categorized
-        .all_text
-        .iter()
-        .any(|p| p.ends_with("object.pack")));
-    assert!(!categorized.all_text.iter().any(|p| p.ends_with("plan.md")));
-    assert!(!categorized.all_text.iter().any(|p| p.ends_with("logo.png")));
+    assert!(!discovered.iter().any(|p| p.ends_with("artifact.rs")));
+    assert!(!discovered.iter().any(|p| p.ends_with("scratch.tmp")));
+    assert!(!discovered.iter().any(|p| p.ends_with("object.pack")));
+    assert!(!discovered.iter().any(|p| p.ends_with("plan.md")));
+    assert!(!discovered.iter().any(|p| p.ends_with("logo.png")));
 
     // False positive resistance: docstrings/foo.md is text, but NOT a spec
-    assert!(categorized.all_text.iter().any(|p| p.ends_with("foo.md")));
+    assert!(discovered.iter().any(|p| p.ends_with("foo.md")));
     assert!(
         !categorized.specs.iter().any(|p| p.ends_with("foo.md")),
         "docstrings/foo.md must not be categorized into specs"

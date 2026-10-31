@@ -5,7 +5,7 @@
 use std::path::Path;
 use xtrc::error::ParseError;
 use xtrc::model::Layer;
-use xtrc::parser::{parse_document, parse_document_file, parse_spec_file};
+use xtrc::parser::document::{parse_document, parse_document_file, parse_spec_file};
 
 #[test]
 fn test_parse_actual_repository_requirements_md() {

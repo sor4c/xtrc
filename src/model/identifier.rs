@@ -9,13 +9,16 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{GraphError, ParseError};
+#[cfg(test)]
+use crate::error::GraphError;
+use crate::error::ParseError;
 use crate::model::Layer;
 
 /// Regular expression pattern string governing all valid `NodeId` tokens.
 ///
 /// Pattern: `^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$`
-pub const NODE_ID_REGEX_PATTERN: &str = r"^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$";
+#[cfg(test)]
+const NODE_ID_REGEX_PATTERN: &str = r"^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$";
 
 /// Domain errors encountered when validating identifier tokens or layer mappings.
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
@@ -332,6 +335,7 @@ impl From<NodeId> for String {
 /// - AutomatedTest: TechnicalSpec, Requirement, or UserStory parents.
 ///
 /// If violated, returns `Err(GraphError::LayerInversion)`.
+#[cfg(test)]
 pub fn validate_parent_relationship(
     child_id: &NodeId,
     child_layer: Layer,
@@ -390,6 +394,7 @@ mod tests {
             assert_eq!(node_id.as_str(), id_str);
             assert_eq!(node_id.to_string(), id_str);
         }
+
         Ok(())
     }
 

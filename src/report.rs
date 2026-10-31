@@ -5,13 +5,15 @@
 use serde::{Deserialize, Serialize};
 
 use crate::graph::model::TraceabilityGraph;
-use crate::graph::validator::{
-    EpicCoverage, ValidationReport, ValidationStats, ValidationViolation,
+use crate::graph::validator::ValidationReport;
+pub use crate::graph::validator::{
+    BrokenLinkKind, EpicCoverage, ValidationStats, ValidationViolation, ViolationSeverity,
 };
-use crate::model::{LayerModel, LinkKind, NodeId};
+use crate::model::LayerModel;
+pub use crate::model::{FileOrigin, Layer, LinkKind, NodeId};
 
 /// Shared JSON schema version for all report output.
-pub const REPORT_SCHEMA_VERSION: &str = "1.0.0";
+pub(crate) const REPORT_SCHEMA_VERSION: &str = "1.0.0";
 
 /// Coverage state assigned once to each node when a report is built.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,7 +62,7 @@ impl CoverageStatus {
 
 /// Computed coverage evidence for a graph node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeCoverage {
+pub(crate) struct NodeCoverage {
     /// Covered node identifier.
     pub node_id: NodeId,
     /// Whether code evidence exists on this node or its immediate child specs.
@@ -76,7 +78,7 @@ pub struct NodeCoverage {
 }
 
 /// Computes per-node coverage once, using the configured immediate child layer.
-pub fn calculate_node_coverage(
+pub(crate) fn calculate_node_coverage(
     graph: &TraceabilityGraph,
     layers: &LayerModel,
     require_test_coverage: bool,
@@ -253,7 +255,7 @@ pub struct Report {
 
 impl Report {
     /// Builds the shared report from a graph and its single validation result.
-    pub fn from_graph(
+    pub(crate) fn from_graph(
         graph: &TraceabilityGraph,
         validation: ValidationReport,
         command: &str,
