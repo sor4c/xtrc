@@ -47,6 +47,7 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
 
     let (_root, config, graph) =
         load_workspace_graph_ext(options.root, options.config_path, options.verbose)?;
+    let reverse = options.reverse && !options.down;
     let validation = validate_graph(
         &graph,
         &ValidationOptions {
@@ -78,7 +79,7 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
             }
         }
         None => {
-            if options.reverse {
+            if reverse {
                 graph.leaves()
             } else {
                 graph.roots()
@@ -90,7 +91,7 @@ pub fn run_tree(options: TreeOptions<'_>) -> Result<(), CliError> {
     let mut tree_nodes = Vec::new();
     let builder = TreeJsonBuilder {
         graph: &graph,
-        reverse: options.reverse,
+        reverse,
         max_depth: options.depth,
         layers: &config.layers,
     };

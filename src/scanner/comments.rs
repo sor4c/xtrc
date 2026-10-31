@@ -332,7 +332,8 @@ fn normalize_source_path(path: &Path, base_root: Option<&Path>) -> PathBuf {
 ///
 /// Line number is 1-indexed. Multiple comma- or semicolon-separated IDs on the same line
 /// yield distinct `TraceLink` instances sharing the same provenance and classification.
-pub fn scan_comment_line(
+#[cfg(test)]
+fn scan_comment_line(
     line: &str,
     line_number: usize,
     file_path: &Path,

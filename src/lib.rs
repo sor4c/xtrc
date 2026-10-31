@@ -11,40 +11,133 @@
 //! // @trace REQ-CLI-INIT, REQ-CMD-MATRIX, REQ-CMD-TREE, REQ-CMD-EXPORT, REQ-FMT-JSON, REQ-UNIX-STREAMS
 //! // @trace SPEC-CI-VERIFY, SPEC-CD-DELIVERY, SPEC-VER-POLICY, REQ-PKG-DIST, REQ-PKG-SBOM, REQ-CI-VERIFY, REQ-CD-MAIN, REQ-VER-POLICY
 
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+#![cfg_attr(not(test), deny(clippy::expect_used))]
 
-pub mod cli;
+mod cli;
 pub mod config;
-pub mod error;
-pub mod graph;
-pub mod model;
-pub mod parser;
-pub mod render;
+mod error;
+mod graph;
+mod model;
+mod parser;
+mod render;
 pub mod report;
-pub mod scanner;
+mod scanner;
 
-pub use cli::output::{MatrixFormat, OutputFormat, StreamEnvironment, TabularFormatter};
-pub use cli::pipeline::load_workspace_graph;
-pub use cli::{Cli, Commands};
-pub use config::WorkspaceConfig;
+pub use cli::run_cli;
 pub use error::{CliError, ConfigError, GraphError, ParseError};
-pub use graph::{
-    detect_cycles, find_all_cycles, validate_graph, BrokenLinkKind, Cycle, CycleDetector,
-    EpicCoverage, NodeColor, TraceabilityGraph, ValidationOptions, ValidationReport,
-    ValidationStats, ValidationViolation, ViolationSeverity,
-};
-pub use model::{
-    validate_parent_relationship, FileOrigin, IdError, Layer, LayerDefinition, LayerModel,
-    LinkKind, NodeId, TraceLink, TraceNode, NODE_ID_REGEX_PATTERN,
-};
-pub use parser::{
-    parse_document, parse_document_file, parse_document_with_layers, parse_spec_content,
-    parse_spec_content_with_layers, parse_spec_file, parse_spec_file_with_layers,
-    DocumentFrontmatter, DocumentStatus, SpecDocument,
-};
-pub use report::{CoverageStatus, NodeCoverage, Report, ReportLink, ReportMatrixRow, ReportNode};
-pub use scanner::{
-    classify_link_kind, clean_id_token, contains_trace_marker_bytes, is_test_file_path,
-    scan_comment_line, scan_comments_file, scan_comments_text, scan_workspace_comments,
-};
+
+use config::WorkspaceConfig;
+use std::path::{Path, PathBuf};
+
+use graph::model::TraceabilityGraph;
+use graph::validator::{validate_graph, ValidationOptions};
+use report::Report;
+
+/// A loaded traceability workspace.
+pub struct Workspace {
+    root: PathBuf,
+    config: WorkspaceConfig,
+    graph: TraceabilityGraph,
+}
+
+impl Workspace {
+    /// Returns the root directory of the loaded workspace.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Returns the workspace configuration.
+    pub fn config(&self) -> &WorkspaceConfig {
+        &self.config
+    }
+}
+
+/// Loads a workspace, its configuration, and its traceability graph.
+///
+/// # Errors
+///
+/// Returns an error when workspace discovery, parsing, scanning, or graph construction fails.
+pub fn load_workspace(
+    root_override: Option<&Path>,
+    config_override: Option<&Path>,
+) -> Result<Workspace, CliError> {
+    let (root, config, graph) =
+        cli::pipeline::load_workspace_graph(root_override, config_override)?;
+    Ok(Workspace {
+        root,
+        config,
+        graph,
+    })
+}
+
+/// Validates a loaded workspace and returns its canonical report.
+///
+/// # Errors
+///
+/// Returns [`CliError::VerificationFailure`] when the workspace fails its configured validation
+/// policy or contains a cycle.
+pub fn check(workspace: &Workspace) -> Result<Report, CliError> {
+    let strict = workspace.config.validation.strict;
+    let mut validation = validate_graph(
+        &workspace.graph,
+        &ValidationOptions {
+            strict,
+            require_test_coverage: workspace.config.validation.require_test_coverage,
+            layer_model: workspace.config.layers.clone(),
+            ..Default::default()
+        },
+    );
+    let cycles = workspace.graph.find_all_cycles();
+    let empty_graph_is_fatal = strict && workspace.graph.is_empty();
+    if empty_graph_is_fatal {
+        validation.status = "fail".to_string();
+    }
+    let passed = validation.is_success(strict);
+
+    let report = Report::from_graph(
+        &workspace.graph,
+        validation,
+        "check",
+        &workspace.config.layers,
+    );
+    if !passed || !cycles.is_empty() || empty_graph_is_fatal {
+        let violations = report
+            .violations
+            .iter()
+            .filter(|violation| violation.is_fatal(strict))
+            .count()
+            + cycles.len()
+            + usize::from(empty_graph_is_fatal);
+        return Err(CliError::VerificationFailure { violations });
+    }
+
+    Ok(report)
+}
+
+#[cfg(test)]
+extern crate self as xtrc;
+
+#[cfg(test)]
+#[path = "config/discovery_internal_tests.rs"]
+mod config_discovery_tests;
+
+#[cfg(test)]
+#[path = "model/identifier_internal_tests.rs"]
+mod model_identifier_tests;
+
+#[cfg(test)]
+#[path = "parser/document_internal_tests.rs"]
+mod parser_document_tests;
+
+#[cfg(test)]
+#[path = "scanner/comments_internal_tests.rs"]
+mod scanner_comments_tests;
+
+#[cfg(test)]
+#[path = "scanner/traversal_internal_tests.rs"]
+mod scanner_traversal_tests;
+
+#[cfg(test)]
+#[path = "report/internal_benchmarks.rs"]
+mod report_benchmarks;

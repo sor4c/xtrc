@@ -4,8 +4,9 @@
 //! // @trace:test REQ-ORPHAN-DETECT, REQ-STRICT-GATE, REQ-EXIT-CODES, US-VERIFY-01, US-ORPHAN-01, US-GATE-01
 
 use std::path::PathBuf;
-use xtrc::graph::{
-    validate_graph, BrokenLinkKind, TraceabilityGraph, ValidationOptions, ValidationViolation,
+use xtrc::graph::model::TraceabilityGraph;
+use xtrc::graph::validator::{
+    validate_graph, BrokenLinkKind, ValidationOptions, ValidationViolation,
 };
 use xtrc::model::{FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceLink, TraceNode};
 
@@ -239,7 +240,7 @@ fn test_json_serialization_matches_cli_schema() -> Result<(), Box<dyn std::error
     let graph = TraceabilityGraph::build(nodes, links)?;
     let report = graph.validate(true);
 
-    let report = xtrc::Report::from_graph(&graph, report, "check", &LayerModel::default());
+    let report = xtrc::report::Report::from_graph(&graph, report, "check", &LayerModel::default());
     let json_str = xtrc::render::render_json(&report)?;
     let val: serde_json::Value = serde_json::from_str(&json_str)?;
 

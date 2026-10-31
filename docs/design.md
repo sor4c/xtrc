@@ -36,7 +36,7 @@ This document establishes the technical architecture and derived design specific
 │  Layer 6: Technical Specifications (SPEC-*) [docs/design.md]           │
 │    │                                                                   │
 │    ├──► Forward Declaration: Source Code (src/**/*.rs // @trace <ID>)  │
-│    └──► Forward Declaration: Automated Tests (tests/**/*.rs)           │
+│    └──► Forward Declaration: Unit Tests (src/**/*.rs), Integration Tests (tests/**/*.rs) │
 │  Layer 7: Implementation & Verification Leaves                         │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -93,7 +93,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-DISC-DISCOVERY
 - **Parent Requirements**: REQ-CFG-DISCOVERY, US-DISC-01
 - **Component Target**: src/config/discovery.rs
-- **Verification Target**: tests/config/test_discovery.rs
+- **Verification Target**: src/config/discovery_internal_tests.rs
 - **Technical Specification**:
   - Algorithm: Starting at `std::env::current_dir()`, inspect each directory for `.xtrc.toml`, then for `.git`. Ascend to parent until found or filesystem root reached.
   - CLI overrides `--root <PATH>` or `--config <PATH>` take absolute precedence over upward discovery.
@@ -106,7 +106,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-DISC-TRAVERSAL
 - **Parent Requirements**: REQ-IGNORE-RULES, REQ-NFR-PERF, US-IGNORE-01
 - **Component Target**: src/scanner/traversal.rs
-- **Verification Target**: tests/scanner/test_traversal.rs
+- **Verification Target**: src/scanner/traversal_internal_tests.rs
 - **Technical Specification**:
   - Uses `ignore::WalkBuilder` to traverse directory trees honoring root `.gitignore`, nested `.gitignore` files, and `.git/info/exclude`.
   - Automatic skip-list: `.git/`, `target/`, `node_modules/`, `.agents/teamwork/`, and hidden files/directories.
@@ -123,7 +123,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-FMT-FRONTMATTER
 - **Parent Requirements**: REQ-DOC-PARSE, US-DOC-01
 - **Component Target**: src/parser/document.rs
-- **Verification Target**: tests/parser/test_document.rs
+- **Verification Target**: src/parser/document_internal_tests.rs
 - **Technical Specification**:
   - Specification files must begin with a YAML frontmatter fence (`---`).
   - Required frontmatter fields:
@@ -148,7 +148,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-FMT-GRAMMAR
 - **Parent Requirements**: REQ-DOC-PARSE, REQ-BROKEN-LINK, US-DOC-01
 - **Component Target**: src/model/identifier.rs
-- **Verification Target**: tests/model/test_identifier.rs
+- **Verification Target**: src/model/identifier_internal_tests.rs
 - **Technical Specification**:
   - ID Regex Grammar: `^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$`
   - Standard Layer Prefixes:
@@ -172,7 +172,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-SCAN-COMMENTS
 - **Parent Requirements**: REQ-CODE-SCAN, REQ-TEST-SCAN, REQ-NFR-PERF, US-CODE-01, US-TEST-01
 - **Component Target**: src/scanner/comments.rs
-- **Verification Target**: tests/scanner/test_comments.rs
+- **Verification Target**: src/scanner/comments_internal_tests.rs
 - **Technical Specification**:
   - Scanning Engine: Fast literal pre-filtered, line-oriented regular expression parser scanning UTF-8 source files without requiring language-specific AST compilers.
   - Fast Literal Pre-Filter & Lazy Line Counting:
@@ -206,7 +206,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-DAG-STORAGE
 - **Parent Requirements**: REQ-DAG-MODEL, US-GRAPH-01
 - **Component Target**: src/graph/model.rs
-- **Verification Target**: tests/graph/test_model.rs
+- **Verification Target**: src/graph/internal_tests/test_model.rs
 - **Technical Specification**:
   - Graph Representation: Bidirectional adjacency graph structure `TraceabilityGraph`.
     ```rust
@@ -238,7 +238,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-DAG-CYCLE
 - **Parent Requirements**: REQ-CYCLE-DETECT, US-CYCLE-01
 - **Component Target**: src/graph/cycle.rs
-- **Verification Target**: tests/graph/test_cycle.rs
+- **Verification Target**: src/graph/internal_tests/test_cycle.rs
 - **Technical Specification**:
   - Algorithm: Three-color Depth First Search (DFS) over forward decomposition edges.
     - `White`: Node unvisited.
@@ -254,7 +254,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-DAG-VALIDATE
 - **Parent Requirements**: REQ-ORPHAN-DETECT, REQ-BROKEN-LINK, REQ-FORWARD-COV, REQ-BACKWARD-JUST, REQ-STRICT-GATE, US-VERIFY-01, US-ORPHAN-01, US-GATE-01
 - **Component Target**: src/graph/validator.rs
-- **Verification Target**: tests/graph/test_validator.rs
+- **Verification Target**: src/graph/internal_tests/test_validator.rs
 - **Technical Specification**:
   - Four-part verification suite executed sequentially:
     1. **Broken Link Audit**: Verifies every target ID declared in parent lists or `@trace` comments exists in the node registry.
@@ -446,7 +446,7 @@ The system is organized into decoupled modules with strict boundaries:
 - **ID**: SPEC-PERF-BOUNDS
 - **Parent Requirements**: REQ-NFR-PERF, REQ-NFR-MEM, REQ-NFR-SCALE, REQ-NFR-DETERM, US-PERF-01, US-UNIX-01
 - **Component Target**: src/lib.rs, src/cli/pipeline.rs, src/scanner/comments.rs, src/scanner/traversal.rs, src/parser/document.rs, src/graph/validator.rs, src/graph/cycle.rs
-- **Verification Target**: tests/perf/test_benchmarks.rs, tests/scanner/test_comments.rs
+- **Verification Target**: src/report/internal_benchmarks.rs, src/scanner/comments_internal_tests.rs
 - **Technical Specification**:
   - Parallel Traversal & Single-Pass Partitioning: Leverages `ignore::WalkParallel` and `rayon` work-stealing thread pools to pipeline directory discovery, single-pass `O(N)` file categorization (including `other` text files without $O(N^2)$ linear slice searches), parallel specification parsing, and parallel comment scanning.
   - Literal Pre-Filtered Scanning & Single-Pass File Inspection: Performs binary NUL-byte sniffing on the initial read buffer and applies fast `@trace` literal pre-filtering with lazy line-number resolution (`nlscan`) so files without annotations incur zero regex engine or line-splitting overhead.
@@ -458,6 +458,11 @@ The system is organized into decoupled modules with strict boundaries:
   - Zero network round-trips or disk-bound temporary databases.
   - Benchmark assertions verify performance, memory, scalability, and determinism budgets during automated testing and CI/CD gates.
 
+### Public Library API
+The crate exposes `run_cli` and its domain error types at the root, plus the intentional `Workspace`, `load_workspace`, and `check` API. Configuration types are available through `xtrc::config`, and the canonical report model through `xtrc::report`. Parsing, scanning, graph, rendering, and CLI implementation modules remain internal; integration tests use the CLI or this public API, while tests of implementation details run as unit tests.
+
+The public API reduction is a breaking change before `1.0.0`, so the base version advances from `0.1.2` to `0.2.0` under Semantic Versioning.
+
 ---
 
 ## 8. Traceability Matrix & Forward Declarations Summary
@@ -467,28 +472,28 @@ The system is organized into decoupled modules with strict boundaries:
 | Requirement ID | Requirement Title | Fulfilling Technical Spec(s) | Component Target (`src/`) | Verification Target (`tests/`) |
 |---|---|---|---|---|
 | `REQ-CLI-INIT` | Repository Initialization Command | `SPEC-DISC-INIT` | `src/cli/init.rs` | `tests/cli/test_init.rs` |
-| `REQ-CFG-DISCOVERY` | Root and Configuration Discovery | `SPEC-DISC-DISCOVERY` | `src/config/discovery.rs` | `tests/config/test_discovery.rs` |
-| `REQ-IGNORE-RULES` | Filesystem Traversal and Ignore Filtering | `SPEC-DISC-TRAVERSAL` | `src/scanner/traversal.rs` | `tests/scanner/test_traversal.rs` |
-| `REQ-DOC-PARSE` | Plain-Text Specification Document Parsing | `SPEC-FMT-FRONTMATTER`, `SPEC-FMT-GRAMMAR` | `src/parser/document.rs`, `src/model/identifier.rs` | `tests/parser/test_document.rs`, `tests/model/test_identifier.rs` |
-| `REQ-CODE-SCAN` | Language-Agnostic Source Code Comment Scanning | `SPEC-SCAN-COMMENTS` | `src/scanner/comments.rs` | `tests/scanner/test_comments.rs` |
-| `REQ-TEST-SCAN` | Automated Test Annotation Scanning | `SPEC-SCAN-COMMENTS` | `src/scanner/comments.rs` | `tests/scanner/test_comments.rs` |
-| `REQ-DAG-MODEL` | In-Memory 7-Layer Directed Acyclic Graph | `SPEC-DAG-STORAGE` | `src/graph/model.rs` | `tests/graph/test_model.rs` |
-| `REQ-CYCLE-DETECT` | Graph Cycle Detection and Diagnostics | `SPEC-DAG-CYCLE` | `src/graph/cycle.rs` | `tests/graph/test_cycle.rs` |
-| `REQ-ORPHAN-DETECT` | Orphan Node and Upward Justification Validation | `SPEC-DAG-VALIDATE` | `src/graph/validator.rs` | `tests/graph/test_validator.rs` |
-| `REQ-BROKEN-LINK` | Broken Reference and Dangling Link Detection | `SPEC-FMT-GRAMMAR`, `SPEC-DAG-VALIDATE` | `src/model/identifier.rs`, `src/graph/validator.rs` | `tests/model/test_identifier.rs`, `tests/graph/test_validator.rs` |
-| `REQ-FORWARD-COV` | Forward Completeness and Coverage Tracking | `SPEC-DAG-VALIDATE` | `src/graph/validator.rs` | `tests/graph/test_validator.rs` |
-| `REQ-BACKWARD-JUST` | Backward Traceability and Provenance Verification | `SPEC-DAG-VALIDATE` | `src/graph/validator.rs` | `tests/graph/test_validator.rs` |
-| `REQ-STRICT-GATE` | Strict CI Verification Gate | `SPEC-DAG-VALIDATE`, `SPEC-CLI-VERIFY` | `src/graph/validator.rs`, `src/cli/verify.rs` | `tests/graph/test_validator.rs`, `tests/cli/test_verify.rs` |
+| `REQ-CFG-DISCOVERY` | Root and Configuration Discovery | `SPEC-DISC-DISCOVERY` | `src/config/discovery.rs` | `src/config/discovery_internal_tests.rs` |
+| `REQ-IGNORE-RULES` | Filesystem Traversal and Ignore Filtering | `SPEC-DISC-TRAVERSAL` | `src/scanner/traversal.rs` | `src/scanner/traversal_internal_tests.rs` |
+| `REQ-DOC-PARSE` | Plain-Text Specification Document Parsing | `SPEC-FMT-FRONTMATTER`, `SPEC-FMT-GRAMMAR` | `src/parser/document.rs`, `src/model/identifier.rs` | `src/parser/document_internal_tests.rs`, `src/model/identifier_internal_tests.rs` |
+| `REQ-CODE-SCAN` | Language-Agnostic Source Code Comment Scanning | `SPEC-SCAN-COMMENTS` | `src/scanner/comments.rs` | `src/scanner/comments_internal_tests.rs` |
+| `REQ-TEST-SCAN` | Automated Test Annotation Scanning | `SPEC-SCAN-COMMENTS` | `src/scanner/comments.rs` | `src/scanner/comments_internal_tests.rs` |
+| `REQ-DAG-MODEL` | In-Memory 7-Layer Directed Acyclic Graph | `SPEC-DAG-STORAGE` | `src/graph/model.rs` | `src/graph/internal_tests/test_model.rs` |
+| `REQ-CYCLE-DETECT` | Graph Cycle Detection and Diagnostics | `SPEC-DAG-CYCLE` | `src/graph/cycle.rs` | `src/graph/internal_tests/test_cycle.rs` |
+| `REQ-ORPHAN-DETECT` | Orphan Node and Upward Justification Validation | `SPEC-DAG-VALIDATE` | `src/graph/validator.rs` | `src/graph/internal_tests/test_validator.rs` |
+| `REQ-BROKEN-LINK` | Broken Reference and Dangling Link Detection | `SPEC-FMT-GRAMMAR`, `SPEC-DAG-VALIDATE` | `src/model/identifier.rs`, `src/graph/validator.rs` | `src/model/identifier_internal_tests.rs`, `src/graph/internal_tests/test_validator.rs` |
+| `REQ-FORWARD-COV` | Forward Completeness and Coverage Tracking | `SPEC-DAG-VALIDATE` | `src/graph/validator.rs` | `src/graph/internal_tests/test_validator.rs` |
+| `REQ-BACKWARD-JUST` | Backward Traceability and Provenance Verification | `SPEC-DAG-VALIDATE` | `src/graph/validator.rs` | `src/graph/internal_tests/test_validator.rs` |
+| `REQ-STRICT-GATE` | Strict CI Verification Gate | `SPEC-DAG-VALIDATE`, `SPEC-CLI-VERIFY` | `src/graph/validator.rs`, `src/cli/verify.rs` | `src/graph/internal_tests/test_validator.rs`, `tests/cli/test_verify.rs` |
 | `REQ-CMD-MATRIX` | Traceability Matrix Reporting | `SPEC-CLI-MATRIX` | `src/cli/matrix.rs` | `tests/cli/test_matrix.rs` |
 | `REQ-CMD-TREE` | Hierarchical Dependency Tree Visualization | `SPEC-CLI-TREE` | `src/cli/tree.rs` | `tests/cli/test_tree.rs` |
 | `REQ-CMD-EXPORT` | Compliance and Traceability Export | `SPEC-CLI-EXPORT` | `src/cli/export.rs` | `tests/cli/test_export.rs` |
 | `REQ-FMT-JSON` | Universal Machine-Readable JSON Output | `SPEC-CLI-OUTPUT` | `src/cli/output.rs` | `tests/cli/test_output.rs` |
 | `REQ-UNIX-STREAMS` | Standard Unix Streams Separation | `SPEC-CLI-VERIFY`, `SPEC-CLI-MATRIX`, `SPEC-CLI-TREE`, `SPEC-CLI-EXPORT`, `SPEC-CLI-OUTPUT` | `src/cli/*.rs` | `tests/cli/test_output.rs` |
 | `REQ-EXIT-CODES` | Deterministic Process Exit Codes | `SPEC-CLI-VERIFY`, `SPEC-CLI-OUTPUT`, `SPEC-ERR-HIERARCHY` | `src/cli/output.rs`, `src/error.rs` | `tests/cli/test_output.rs`, `tests/error/test_error.rs` |
-| `REQ-NFR-PERF` | Sub-Second Execution Performance | `SPEC-DISC-TRAVERSAL`, `SPEC-CLI-VERIFY`, `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/scanner/traversal.rs`, `src/cli/pipeline.rs`, `src/lib.rs` | `tests/perf/test_benchmarks.rs` |
-| `REQ-NFR-MEM` | Bounded Memory Footprint and Streaming Binary Sniffing | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/scanner/traversal.rs`, `src/scanner/comments.rs` | `tests/perf/test_benchmarks.rs` |
-| `REQ-NFR-SCALE` | Multi-Core Linear Scalability and O(V + E) Graph Complexity | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/cli/pipeline.rs`, `src/graph/validator.rs`, `src/graph/cycle.rs` | `tests/perf/test_benchmarks.rs` |
-| `REQ-NFR-DETERM` | Deterministic and Reproducible Multi-Core Output | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/cli/pipeline.rs`, `src/graph/model.rs`, `src/graph/validator.rs` | `tests/perf/test_benchmarks.rs` |
+| `REQ-NFR-PERF` | Sub-Second Execution Performance | `SPEC-DISC-TRAVERSAL`, `SPEC-CLI-VERIFY`, `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/scanner/traversal.rs`, `src/cli/pipeline.rs`, `src/lib.rs` | `src/report/internal_benchmarks.rs` |
+| `REQ-NFR-MEM` | Bounded Memory Footprint and Streaming Binary Sniffing | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/scanner/traversal.rs`, `src/scanner/comments.rs` | `src/report/internal_benchmarks.rs` |
+| `REQ-NFR-SCALE` | Multi-Core Linear Scalability and O(V + E) Graph Complexity | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/cli/pipeline.rs`, `src/graph/validator.rs`, `src/graph/cycle.rs` | `src/report/internal_benchmarks.rs` |
+| `REQ-NFR-DETERM` | Deterministic and Reproducible Multi-Core Output | `SPEC-PERF-BOUNDS`, `SPEC-PERF-HARNESS` | `src/cli/pipeline.rs`, `src/graph/model.rs`, `src/graph/validator.rs` | `src/report/internal_benchmarks.rs` |
 | `REQ-NFR-ROBUST` | Robust Error Handling and Crash-Free Operation | `SPEC-ERR-HIERARCHY` | `src/error.rs` | `tests/error/test_error.rs` |
 
 ### 8.2 Backward Justification & Upward Linkage Summary

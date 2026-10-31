@@ -35,10 +35,6 @@ pub struct MatrixOptions<'a> {
     pub verbose: bool,
 }
 
-/// Structured row representation of a traceability matrix entry.
-/// Structured row representation of a traceability matrix entry.
-pub type MatrixRow = ReportMatrixRow;
-
 /// Executes matrix generation and rendering.
 pub fn run_matrix(options: MatrixOptions<'_>) -> Result<(), CliError> {
     // Probe stream environment and disable ANSI color codes when piped
@@ -289,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_matrix_row_creation() {
-        let row = MatrixRow {
+        let row = ReportMatrixRow {
             id: "REQ-01".to_string(),
             layer: "Requirement".to_string(),
             title: "Verification".to_string(),

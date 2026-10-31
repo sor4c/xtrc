@@ -6,9 +6,6 @@ pub mod cycle;
 pub mod model;
 pub mod validator;
 
-pub use cycle::{detect_cycles, find_all_cycles, Cycle, CycleDetector, NodeColor};
-pub use model::TraceabilityGraph;
-pub use validator::{
-    validate_graph, BrokenLinkKind, EpicCoverage, ValidationOptions, ValidationReport,
-    ValidationStats, ValidationViolation, ViolationSeverity,
-};
+#[cfg(test)]
+#[path = "internal_tests/mod.rs"]
+mod integration_tests;

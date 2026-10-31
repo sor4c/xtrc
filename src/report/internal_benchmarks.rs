@@ -13,12 +13,15 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
+use xtrc::cli::pipeline::load_workspace_graph;
+use xtrc::graph::cycle::detect_cycles;
+use xtrc::graph::model::TraceabilityGraph;
+use xtrc::graph::validator::{validate_graph, ValidationOptions};
+use xtrc::model::{FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceLink, TraceNode};
 use xtrc::render::{render_json, render_terminal_summary};
-use xtrc::Report;
-use xtrc::{
-    contains_trace_marker_bytes, detect_cycles, load_workspace_graph, scan_comments_file,
-    scan_comments_text, validate_graph, FileOrigin, Layer, LayerModel, LinkKind, NodeId, TraceLink,
-    TraceNode, TraceabilityGraph, ValidationOptions,
+use xtrc::report::Report;
+use xtrc::scanner::comments::{
+    contains_trace_marker_bytes, scan_comments_file, scan_comments_text,
 };
 
 /// Helper to construct the `@trace` marker string dynamically in test fixtures so

@@ -33,8 +33,6 @@ pub struct CategorizedFiles {
     pub tests: Vec<PathBuf>,
     /// Remaining discovered text files not matched by `specs`, `code`, or `tests`.
     pub other: Vec<PathBuf>,
-    /// All discovered text files in the workspace.
-    pub all_text: Vec<PathBuf>,
 }
 
 /// Checks whether a byte slice contains any null bytes (`0x00`).
@@ -174,36 +172,6 @@ pub fn walk_workspace(root: &Path, config: &WorkspaceConfig) -> Result<Vec<PathB
     Ok(paths)
 }
 
-/// Performs a synchronous ignore-aware traversal of the workspace directory.
-///
-/// Useful in single-threaded contexts, unit tests, and deterministic debugging.
-pub fn walk_workspace_sync(
-    root: &Path,
-    config: Option<&WorkspaceConfig>,
-) -> Result<Vec<PathBuf>, ConfigError> {
-    let builder = create_walk_builder(root, config)?;
-    let mut paths = Vec::new();
-
-    for entry_res in builder.build() {
-        match entry_res {
-            Ok(entry) => {
-                if entry.file_type().is_some_and(|ft| ft.is_file()) {
-                    let path = entry.into_path();
-                    if !is_binary_file(&path) {
-                        paths.push(path);
-                    }
-                }
-            }
-            Err(err) => {
-                eprintln!("warning: traversal error: {err}");
-            }
-        }
-    }
-
-    paths.sort();
-    Ok(paths)
-}
-
 /// Compiles a slice of glob pattern strings into an optimized [`GlobSet`].
 ///
 /// Normalizes path separators and enforces `literal_separator(true)` so that `*`
@@ -248,7 +216,6 @@ pub fn categorize_files(
         code: Vec::new(),
         tests: Vec::new(),
         other: Vec::new(),
-        all_text: all_files.to_vec(),
     };
 
     let specs_include = build_glob_set(&config.specs.include);
@@ -295,41 +262,6 @@ pub fn categorize_files(
     categorized
 }
 
-/// Checks if a relative path matches any glob pattern in the provided slice.
-///
-/// // @trace SPEC-DISC-TRAVERSAL, REQ-IGNORE-RULES
-pub fn matches_any_glob(path_str: &str, patterns: &[String]) -> bool {
-    let clean_path = path_str.replace('\\', "/");
-    let clean_path = clean_path.strip_prefix("./").unwrap_or(&clean_path);
-    for pattern in patterns {
-        if glob_match(pattern, clean_path) {
-            return true;
-        }
-    }
-    false
-}
-
-/// Wildcard glob matcher supporting `*`, `**`, `?`, character classes, and cross-platform path separators.
-///
-/// Employs genuine glob parsing with `literal_separator(true)` so that `*` and `?`
-/// are restricted to a single path component and only `**` traverses directory boundaries.
-///
-/// // @trace SPEC-DISC-TRAVERSAL, REQ-IGNORE-RULES
-pub fn glob_match(pattern: &str, path_str: &str) -> bool {
-    let clean_pattern = pattern.replace('\\', "/");
-    let clean_pattern = clean_pattern.strip_prefix("./").unwrap_or(&clean_pattern);
-    let clean_path = path_str.replace('\\', "/");
-    let clean_path = clean_path.strip_prefix("./").unwrap_or(&clean_path);
-
-    match GlobBuilder::new(clean_pattern)
-        .literal_separator(true)
-        .build()
-    {
-        Ok(glob) => glob.compile_matcher().is_match(clean_path),
-        Err(_) => false,
-    }
-}
-
 /// Checks if a file path matches any of the configured file extensions without heap allocation.
 fn has_matching_extension(path: &Path, extensions: &[String]) -> bool {
     if extensions.is_empty() {
@@ -347,6 +279,11 @@ fn has_matching_extension(path: &Path, extensions: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn glob_match(pattern: &str, path: &str) -> bool {
+        let patterns = [pattern.to_string()];
+        build_glob_set(&patterns).is_match(path.replace('\\', "/"))
+    }
 
     #[test]
     fn test_is_binary_buffer() {

@@ -11,7 +11,7 @@ use std::str::FromStr;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-pub use identifier::{validate_parent_relationship, IdError, NodeId, NODE_ID_REGEX_PATTERN};
+pub use identifier::{IdError, NodeId};
 
 /// The distinct tiers in the 7-layer traceability lifecycle hierarchy.
 ///

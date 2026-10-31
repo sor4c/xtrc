@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::error::GraphError;
 use crate::graph::cycle::{self, Cycle};
+#[cfg(test)]
 use crate::graph::validator::{self, ValidationOptions, ValidationReport};
 use crate::model::{Layer, LinkKind, NodeId, TraceLink, TraceNode};
 
@@ -319,7 +320,8 @@ impl TraceabilityGraph {
     }
 
     /// Validates graph referential integrity, orphan nodes, forward coverage, and backward justification.
-    pub fn validate(&self, strict: bool) -> ValidationReport {
+    #[cfg(test)]
+    pub(crate) fn validate(&self, strict: bool) -> ValidationReport {
         validator::validate_graph(
             self,
             &ValidationOptions {
@@ -330,7 +332,8 @@ impl TraceabilityGraph {
     }
 
     /// Validates graph with explicit options (e.g. strict, layer_filter, id_filter).
-    pub fn validate_with_options(&self, options: &ValidationOptions) -> ValidationReport {
+    #[cfg(test)]
+    pub(crate) fn validate_with_options(&self, options: &ValidationOptions) -> ValidationReport {
         validator::validate_graph(self, options)
     }
 }

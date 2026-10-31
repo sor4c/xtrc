@@ -6,14 +6,6 @@ use crate::config::WorkspaceConfig;
 use crate::error::ConfigError;
 use std::path::{Path, PathBuf};
 
-/// High-level project discovery entering at `start_dir`.
-pub fn find_project_root(
-    start_dir: &Path,
-    config_override: Option<&Path>,
-) -> Result<(PathBuf, WorkspaceConfig), ConfigError> {
-    discover_workspace(start_dir, None, config_override)
-}
-
 /// Discovers the workspace root and loads the configuration.
 ///
 /// Precedence:

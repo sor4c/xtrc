@@ -3,12 +3,12 @@
 //! // @trace SPEC-DISC-INIT, SPEC-DISC-DISCOVERY, REQ-CFG-DISCOVERY, REQ-CLI-INIT
 
 use crate::error::ConfigError;
-use crate::model::LayerModel;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub mod discovery;
-pub use discovery::{discover_workspace, find_project_root};
+pub(crate) mod discovery;
+
+pub use crate::model::{Layer, LayerDefinition, LayerModel};
 
 /// Root configuration structure matching the `.xtrc.toml` file schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -8,11 +8,11 @@
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match xtrc::cli::run_cli() {
+    match xtrc::run_cli() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             match &err {
-                xtrc::error::CliError::InvalidArguments { reason } => {
+                xtrc::CliError::InvalidArguments { reason } => {
                     if reason.starts_with("error:") || reason.starts_with("Error:") {
                         if reason.ends_with('\n') {
                             eprint!("{reason}");

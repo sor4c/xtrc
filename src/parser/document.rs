@@ -381,6 +381,7 @@ pub fn has_frontmatter(content: &str) -> bool {
 }
 
 /// Parses Markdown specification content string into a structured `SpecDocument` AST.
+#[cfg(test)]
 pub fn parse_document(content: &str, path: &Path) -> Result<SpecDocument, ParseError> {
     parse_document_with_layers(content, path, &LayerModel::default())
 }
@@ -570,12 +571,6 @@ pub fn parse_document_with_layers(
     })
 }
 
-/// Convenience function: parses Markdown specification content string into a vector of `TraceNode`s.
-pub fn parse_spec_content(content: &str, path: &Path) -> Result<Vec<TraceNode>, ParseError> {
-    let doc = parse_document(content, path)?;
-    Ok(doc.nodes)
-}
-
 /// Parses specification content using the configured layer hierarchy.
 pub fn parse_spec_content_with_layers(
     content: &str,
@@ -587,6 +582,7 @@ pub fn parse_spec_content_with_layers(
 }
 
 /// Reads a specification file from disk and parses it into a structured `SpecDocument` AST.
+#[cfg(test)]
 pub fn parse_document_file(path: &Path) -> Result<SpecDocument, ParseError> {
     let content = fs::read_to_string(path).map_err(|err| ParseError::Io {
         path: path.to_path_buf(),
@@ -596,6 +592,7 @@ pub fn parse_document_file(path: &Path) -> Result<SpecDocument, ParseError> {
 }
 
 /// Primary M2 ↔ M3 interface: reads a specification file from disk and returns extracted child `TraceNode`s.
+#[cfg(test)]
 pub fn parse_spec_file(path: &Path) -> Result<Vec<TraceNode>, ParseError> {
     let doc = parse_document_file(path)?;
     Ok(doc.nodes)
