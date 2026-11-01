@@ -4,8 +4,16 @@ name: Security Review Gate
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
-  pull_request_review_comment:
-    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to check
+        required: true
+        type: number
+      head_sha:
+        description: Current pull request head SHA
+        required: true
+        type: string
 permissions:
   contents: read
   pull-requests: read
@@ -16,8 +24,7 @@ jobs:
     name: Publish trusted Advanced Security status
     if: >-
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
-      (github.event_name == 'pull_request_review_comment' &&
-       github.event.pull_request.base.ref == 'main')
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
       group: trusted-ghas-${{ github.event.pull_request.number || github.run_id }}
@@ -34,8 +41,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.head_sha }}
         run: |
           set -euo pipefail
           if [[ ! "${PR_EVENT_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
@@ -49,6 +56,9 @@ jobs:
           fi
           head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
           if [[ "${head_sha}" != "${PR_EVENT_HEAD_SHA}" ]]; then
+            if [[ "${head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "head_sha=${head_sha}" >>"${GITHUB_OUTPUT}"
+            fi
             echo "The pull request head changed or could not be verified; refusing to pass." >&2
             exit 1
           fi
@@ -70,7 +80,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: bash scripts/check-unresolved-security-findings.sh
 
       - name: Publish trusted status result on pull request head
