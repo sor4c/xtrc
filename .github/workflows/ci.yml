@@ -18,7 +18,7 @@ env:
 
 jobs:
   security-review-findings:
-    name: ${{ github.event_name == 'pull_request' && 'Advanced Security Review Findings' || 'Security Review Gate (PR only)' }}
+    name: Advanced Security Review Findings
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
