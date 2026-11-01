@@ -15,6 +15,9 @@ Use this workflow when the user asks to deliver an issue, not when they ask only
 - Do not overwrite or discard unrelated user changes. If the worktree is dirty, the current branch is not `main`, or repository state conflicts with the expected workflow, inspect and preserve the state; stop and ask before proceeding if safe isolation is unclear.
 - Do not invent requirements, mark unchecked acceptance criteria complete without evidence, or silently change the issue's scope.
 - Ask the user when requirements are ambiguous, a material design choice is unresolved, or a required action is not authorized. Stop rather than claim completion when GitHub permissions, CI status, the independent reviewer, or another required capability is unavailable.
+- A finding from `github-advanced-security[bot]` is a hard merge blocker until it has been fixed and its review conversation resolved. Inspect the bot's review threads and the required `Trusted Advanced Security Review Findings` check; never dismiss, ignore, or bypass a finding to unblock a merge. Do not rely on a PR review-comment-triggered workflow for this check because it can execute PR-controlled workflow code.
+- If a finding is fixed and its thread resolved without a new push, post an issue comment on the PR containing `/security-check <current-head-sha>` to trigger a trusted recheck from the default branch.
+- For the one-time bootstrap PR that first adds `.github/workflows/security-review-gate.yml`, GitHub cannot run the trusted `pull_request_target` workflow until it is on the base branch. Do not merge until required-conversation-resolution protection is active, all GHAS findings are fixed and their threads resolved, and the trusted checker has been independently run against the exact current PR head. Immediately after merge, require the new trusted workflow check on `main`; ordinary PRs must not merge if that required check is absent or not passing.
 - Do not include auto-closing PR phrases (`Closes`, `Fixes`, or `Resolves`) for the issue. GitHub may close it at merge time before the merge-commit workflows finish. Use `Relates to #N`; close the issue explicitly only after post-merge verification succeeds.
 
 ## Workflow
@@ -54,7 +57,7 @@ Use this workflow when the user asks to deliver an issue, not when they ask only
    - clean-context review outcome;
    - version/SBOM/docs impact assessment;
    - acceptance criteria only when supported by evidence.
-2. Wait for every required PR check to finish successfully and inspect review comments and unresolved threads. Do not merge while checks are pending, failed, or unknown. Resolve failures and review feedback, then repeat applicable checks/review.
+2. Wait for every required PR check to finish successfully and inspect review comments and unresolved threads, especially findings from `github-advanced-security[bot]`. Do not merge while any such finding is unresolved, or while any required check is pending, failed, or unknown. Resolve findings only after addressing them. If thread resolution does not trigger a new trusted check, post an issue comment on the PR containing `/security-check <current-head-sha>` and verify success for that exact head. Apply only the one-time trusted-workflow bootstrap procedure above when the PR itself installs that workflow.
 3. Merge only when the user asked for end-to-end delivery and all requirements, independent review, PR checks, and repository merge rules are satisfied. If merge authorization or a required gate is unclear, stop and ask; never bypass a required check.
 
 ### 5. Verify the merge and close the issue

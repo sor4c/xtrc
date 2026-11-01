@@ -47,6 +47,11 @@ When assisting developers in this repository, GitHub Copilot MUST respect and en
 - If the workflow is pending, missing, or otherwise unverifiable, leave the issue open and describe the task as awaiting post-merge verification; do not report completion based only on PR checks.
 - When asked to implement or deliver a GitHub issue end to end, follow the [issue-delivery skill](skills/issue-delivery/SKILL.md), invoke the `issue-reviewer` custom agent for a fresh-context read-only review, and use the `/implement-issue` prompt for the issue number when convenient.
 
+### GitHub Advanced Security Findings
+- Never merge while a finding or review thread from `github-advanced-security[bot]` is unresolved. Investigate and fix the finding, then resolve the conversation; do not dismiss or bypass it to unblock merging.
+- Require the `Trusted Advanced Security Review Findings` check from the trusted `pull_request_target` workflow and GitHub's required-conversation-resolution branch protection. If either gate is absent, failing, or unverifiable, stop without merging. Do not use PR review-comment-triggered workflows for this gate because they can execute PR-controlled workflow code. After fixing and resolving a finding without a new push, post an issue comment on the PR containing `/security-check <current-head-sha>` to trigger a trusted recheck from the default branch.
+- For the one-time PR that installs the trusted workflow, require conversation resolution, fix and resolve every bot finding, independently run the trusted checker on the current PR head, and make the new check required on `main` immediately after merge.
+
 ---
 
 ## 3. Rust Standards & Idiomatic Conventions

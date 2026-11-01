@@ -46,6 +46,12 @@ All autonomous agents MUST adhere strictly to the **Three Core Development Rules
 - If the post-merge workflow has not started, is still running, or its result cannot be verified, leave the issue open and report verification as pending. Do not equate green PR checks with successful post-merge verification.
 - For requests to implement or deliver a GitHub issue end to end, use the [issue-delivery workflow](.github/skills/issue-delivery/SKILL.md). It requires a fresh-context review with the `issue-reviewer` agent and covers version/SBOM/docs impact, PR and merge gates, exact-SHA post-merge verification, issue closure, and returning the checkout to `main`.
 
+### GitHub Advanced Security Findings (Mandatory)
+- Never merge a PR while any finding or review thread from `github-advanced-security[bot]` is unresolved. Fix the issue and resolve its conversation; never dismiss or bypass a finding just to make a PR mergeable.
+- The `Trusted Advanced Security Review Findings` PR check from the trusted `pull_request_target` workflow and GitHub's required-conversation-resolution branch protection are mandatory merge gates. If either is missing, failing, skipped unexpectedly, or unverifiable, stop and do not merge. Do not use PR review-comment-triggered workflows for this gate because they can execute PR-controlled workflow code. After fixing and resolving a finding without a new push, post an issue comment on the PR containing `/security-check <current-head-sha>` to trigger a trusted recheck from the default branch.
+- For the one-time PR that installs the trusted workflow, require conversation resolution, fix and resolve all bot findings, and independently run the trusted checker against the current PR head before merging; immediately make the new check required on `main`. This bootstrap does not permit unresolved findings or a merge before direct verification.
+- Treat bot findings as security reports requiring investigation even when CI is green. Confirm the fix in code and tests, and record the resolution in the PR.
+
 ---
 
 ## 3. Mandatory Quality Gates & Verification

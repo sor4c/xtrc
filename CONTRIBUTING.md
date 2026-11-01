@@ -28,7 +28,7 @@ All contributions—whether authored by human engineers or AI assistants—must 
 - **Context and Motivation First**: No pull request or code change may be created in isolation. Every change must originate from an existing, well-scoped GitHub issue that details the motivation, background, and definition of done.
 - **Search Before Creating**: Check existing issues and discussions before opening a new issue to avoid duplicate efforts.
 - **Use Structured Templates**: Issues must be submitted using one of our governed templates in `.github/ISSUE_TEMPLATE/` (`feature_proposal.yml`, `bug_report.yml`, or `task.yml`). Blank, unformatted issues are disabled.
-- **Explicit Traceability Links**: Pull requests must explicitly reference their originating issue in their title and body (e.g., `Fixes #42` or `Relates to #88`).
+- **Explicit Traceability Links**: Pull requests must explicitly reference their originating issue in their title and body (e.g., `Relates to #88`). Do not use auto-closing keywords; close the issue only after required post-merge workflows pass.
 - **No Unsolicited Drive-By PRs**: Speculative refactorings or ungrounded architectural changes submitted without prior issue alignment will be closed.
 
 ### Rule 2: Requirements Before Design
@@ -105,10 +105,13 @@ bash scripts/measure-perf.sh
 ### 6. Pull Request Submission
 - Always submit changes via a Pull Request targeting `main` (never push directly to `main`).
 - Fill out the PR description:
-  - Reference the originating issue (e.g., `Closes #42`).
+  - Reference the originating issue with a non-closing phrase such as `Relates to #42`.
   - Summarize the intent of the change and how requirements are fulfilled.
   - List the verification steps taken and check off (`- [x]`) all fulfilled acceptance criteria.
-- Ensure all CI workflow checks pass. Address reviewer feedback constructively.
+- Ensure all required CI workflow checks pass. Address reviewer feedback constructively.
+- Never merge while any finding or review thread from `github-advanced-security[bot]` is unresolved. The `Trusted Advanced Security Review Findings` check from the trusted `pull_request_target` workflow must pass, and all review conversations must be resolved. Investigate and fix findings; do not dismiss or bypass them. Do not use PR review-comment-triggered workflows for this gate because they can execute PR-controlled workflow code. If resolving a thread does not trigger a new check, post an issue comment on the PR containing `/security-check <current-head-sha>` to trigger a trusted recheck from the default branch.
+- For the one-time PR installing that workflow, require conversation resolution, fix and resolve all bot findings, independently run the trusted checker against the PR head, and make the resulting check required on `main` immediately after merge.
+- After merging, verify all required workflows on the exact merge commit SHA before closing the issue. If a check fails or cannot be verified, keep or reopen the issue.
 
 ### 7. Version & Delivery Policy
 - **Base Version (`MAJOR.MINOR.PATCH`)**: Managed in `Cargo.toml` per Semantic Versioning 2.0.0.
