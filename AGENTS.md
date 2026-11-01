@@ -44,6 +44,7 @@ All autonomous agents MUST adhere strictly to the **Three Core Development Rules
 - Do not put auto-closing keywords such as `Closes #N`, `Fixes #N`, or `Resolves #N` in a PR description while post-merge checks are pending; GitHub may close the issue as soon as the PR merges. Use a non-closing reference such as `Relates to #N`, then close the issue explicitly only after post-merge CI succeeds.
 - If any required post-merge workflow fails, keep the issue open or reopen it immediately. Diagnose the failure, fix it on a follow-up branch and PR, and verify all required workflows on the follow-up merge commit before closing the issue.
 - If the post-merge workflow has not started, is still running, or its result cannot be verified, leave the issue open and report verification as pending. Do not equate green PR checks with successful post-merge verification.
+- For requests to implement or deliver a GitHub issue end to end, use the [issue-delivery workflow](.github/skills/issue-delivery/SKILL.md). It requires a fresh-context review with the `issue-reviewer` agent and covers version/SBOM/docs impact, PR and merge gates, exact-SHA post-merge verification, issue closure, and returning the checkout to `main`.
 
 ---
 
