@@ -39,6 +39,12 @@ All autonomous agents MUST adhere strictly to the **Three Core Development Rules
 - **Always work on a dedicated branch**: Every task, feature, bug fix, or documentation update must be developed on an isolated branch named `<type>/<issue-id>-<short-description>` (e.g., `feat/15-nfr-ci-perf-gate`, `fix/20-parser-edge-case`).
 - **Always use Pull Requests**: Push your feature/task branch to the remote repository and open a GitHub Pull Request targeting `main` that links to the originating issue and passes all CI/CD verification and performance gates.
 
+### Post-Merge CI and Issue Closure (Mandatory)
+- PR checks validate the PR head, not necessarily the merge commit. After merging, identify the exact merge commit SHA and wait for every required workflow triggered on `main` for that SHA to complete successfully before declaring the task complete.
+- Do not put auto-closing keywords such as `Closes #N`, `Fixes #N`, or `Resolves #N` in a PR description while post-merge checks are pending; GitHub may close the issue as soon as the PR merges. Use a non-closing reference such as `Relates to #N`, then close the issue explicitly only after post-merge CI succeeds.
+- If any required post-merge workflow fails, keep the issue open or reopen it immediately. Diagnose the failure, fix it on a follow-up branch and PR, and verify all required workflows on the follow-up merge commit before closing the issue.
+- If the post-merge workflow has not started, is still running, or its result cannot be verified, leave the issue open and report verification as pending. Do not equate green PR checks with successful post-merge verification.
+
 ---
 
 ## 3. Mandatory Quality Gates & Verification

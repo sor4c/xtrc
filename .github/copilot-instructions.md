@@ -40,6 +40,12 @@ When assisting developers in this repository, GitHub Copilot MUST respect and en
 - **Always work on a branch**: Develop every change on a dedicated issue branch (`feat/<issue-id>-<slug>`, `fix/<issue-id>-<slug>`, `chore/<issue-id>-<slug>`, `docs/<issue-id>-<slug>`).
 - **Always open Pull Requests**: Submit all changes via a GitHub Pull Request targeting `main` and ensure all CI verification, traceability, and NFR performance gates pass.
 
+### Post-Merge CI and Issue Closure
+- PR checks are not a substitute for checks on the merge commit. After merging, identify the exact merge commit SHA and wait until every required workflow triggered on `main` for that SHA has completed successfully.
+- Do not use auto-closing PR phrases (`Closes #N`, `Fixes #N`, or `Resolves #N`) while post-merge checks are pending, because GitHub may close the issue immediately upon merge. Use `Relates to #N` and close the issue explicitly only after the post-merge checks pass.
+- If a required post-merge workflow fails, keep or reopen the issue, investigate the failure, and submit the fix through a follow-up branch and PR. Verify the resulting merge commit's required workflows before closing the issue.
+- If the workflow is pending, missing, or otherwise unverifiable, leave the issue open and describe the task as awaiting post-merge verification; do not report completion based only on PR checks.
+
 ---
 
 ## 3. Rust Standards & Idiomatic Conventions
