@@ -28,12 +28,6 @@ jobs:
       group: trusted-ghas-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
       cancel-in-progress: false
     steps:
-      - name: Check out trusted base revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-          persist-credentials: false
-
       - name: Resolve pull request head
         id: pr
         env:
@@ -86,6 +80,12 @@ jobs:
             -f context="Trusted Advanced Security Review Findings" \
             -f description="Checking unresolved GitHub Advanced Security findings" \
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Check out trusted base revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
 
       - name: Check for unresolved Advanced Security findings
         id: scan
