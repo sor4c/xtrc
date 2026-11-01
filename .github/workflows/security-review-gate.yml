@@ -3,16 +3,9 @@ name: Security Review Gate
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   pull_request_review_comment:
     types: [created, edited]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: Pull request number to check
-        required: true
-        type: number
-
 permissions:
   contents: read
   pull-requests: read
@@ -24,11 +17,10 @@ jobs:
     if: >-
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
       (github.event_name == 'pull_request_review_comment' &&
-       github.event.pull_request.base.ref == 'main') ||
-      github.event_name == 'workflow_dispatch'
+       github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
     concurrency:
-      group: trusted-ghas-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+      group: trusted-ghas-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: true
     steps:
       - name: Check out trusted base revision
@@ -42,19 +34,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          if [[ ! "${PR_EVENT_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GitHub provided an invalid pull request head SHA." >&2
+            exit 1
+          fi
+          echo "head_sha=${PR_EVENT_HEAD_SHA}" >>"${GITHUB_OUTPUT}"
           if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
             echo "A numeric PR_NUMBER is required." >&2
             exit 2
           fi
           head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          if [[ ! "${head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "GitHub returned an invalid pull request head SHA." >&2
+          if [[ "${head_sha}" != "${PR_EVENT_HEAD_SHA}" ]]; then
+            echo "The pull request head changed or could not be verified; refusing to pass." >&2
             exit 1
           fi
-          echo "head_sha=${head_sha}" >>"${GITHUB_OUTPUT}"
 
       - name: Set trusted status pending on pull request head
         env:
