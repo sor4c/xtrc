@@ -17,7 +17,6 @@ jobs:
     if: >-
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
       (github.event_name == 'pull_request_review_comment' &&
-       github.event.comment.user.login == 'github-advanced-security[bot]' &&
        github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
     steps:

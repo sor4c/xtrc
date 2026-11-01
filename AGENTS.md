@@ -48,7 +48,7 @@ All autonomous agents MUST adhere strictly to the **Three Core Development Rules
 
 ### GitHub Advanced Security Findings (Mandatory)
 - Never merge a PR while any finding or review thread from `github-advanced-security[bot]` is unresolved. Fix the issue and resolve its conversation; never dismiss or bypass a finding just to make a PR mergeable.
-- The `Advanced Security Review Findings` PR check and GitHub's required-conversation-resolution branch protection are mandatory merge gates. If either is missing, failing, skipped unexpectedly, or unverifiable, stop and do not merge.
+- The `Trusted Advanced Security Review Findings` PR check and GitHub's required-conversation-resolution branch protection are mandatory merge gates. If either is missing, failing, skipped unexpectedly, or unverifiable, stop and do not merge. After fixing/resolving a finding, rerun its failed job for the current PR head with `gh run rerun <run-id> --failed --repo sor4c/xtrc` if thread resolution did not retrigger it.
 - Treat bot findings as security reports requiring investigation even when CI is green. Confirm the fix in code and tests, and record the resolution in the PR.
 
 ---

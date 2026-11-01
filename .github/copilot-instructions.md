@@ -49,7 +49,7 @@ When assisting developers in this repository, GitHub Copilot MUST respect and en
 
 ### GitHub Advanced Security Findings
 - Never merge while a finding or review thread from `github-advanced-security[bot]` is unresolved. Investigate and fix the finding, then resolve the conversation; do not dismiss or bypass it to unblock merging.
-- Require the `Advanced Security Review Findings` PR check and GitHub's required-conversation-resolution branch protection. If either gate is absent, failing, or unverifiable, stop without merging.
+- Require the `Trusted Advanced Security Review Findings` PR check and GitHub's required-conversation-resolution branch protection. If either gate is absent, failing, or unverifiable, stop without merging. Rerun its failed job for the current PR head with `gh run rerun <run-id> --failed --repo sor4c/xtrc` if thread resolution did not trigger it.
 
 ---
 
