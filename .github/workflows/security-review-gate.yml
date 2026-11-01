@@ -6,29 +6,94 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   pull_request_review_comment:
     types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to check
+        required: true
+        type: number
 
 permissions:
   contents: read
   pull-requests: read
+  statuses: write
 
 jobs:
   security-review-findings:
-    name: Trusted Advanced Security Review Findings
+    name: Publish trusted Advanced Security status
     if: >-
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
       (github.event_name == 'pull_request_review_comment' &&
-       github.event.pull_request.base.ref == 'main')
+       github.event.pull_request.base.ref == 'main') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    concurrency:
+      group: trusted-ghas-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+      cancel-in-progress: true
     steps:
       - name: Check out trusted base revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
 
-      - name: Check for unresolved Advanced Security findings
+      - name: Resolve pull request head
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
+            echo "A numeric PR_NUMBER is required." >&2
+            exit 2
+          fi
+          head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          if [[ ! "${head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GitHub returned an invalid pull request head SHA." >&2
+            exit 1
+          fi
+          echo "head_sha=${head_sha}" >>"${GITHUB_OUTPUT}"
+
+      - name: Set trusted status pending on pull request head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
+            -f state=pending \
+            -f context="Trusted Advanced Security Review Findings" \
+            -f description="Checking unresolved GitHub Advanced Security findings" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Check for unresolved Advanced Security findings
+        id: scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: bash scripts/check-unresolved-security-findings.sh
+
+      - name: Publish trusted status result on pull request head
+        if: always() && steps.pr.outputs.head_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: |
+          set -euo pipefail
+          if [[ "${SCAN_OUTCOME}" == "success" ]]; then
+            state=success
+            description="No unresolved GitHub Advanced Security findings"
+          else
+            state=failure
+            description="Unresolved or unverifiable GitHub Advanced Security findings"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${PR_HEAD_SHA}" \
+            -f "state=${state}" \
+            -f context="Trusted Advanced Security Review Findings" \
+            -f "description=${description}" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

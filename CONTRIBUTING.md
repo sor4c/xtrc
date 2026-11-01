@@ -109,7 +109,8 @@ bash scripts/measure-perf.sh
   - Summarize the intent of the change and how requirements are fulfilled.
   - List the verification steps taken and check off (`- [x]`) all fulfilled acceptance criteria.
 - Ensure all required CI workflow checks pass. Address reviewer feedback constructively.
-- Never merge while any finding or review thread from `github-advanced-security[bot]` is unresolved. The `Trusted Advanced Security Review Findings` check must pass, and all review conversations must be resolved. Investigate and fix findings; do not dismiss or bypass them. If resolving a thread does not retrigger the trusted check, rerun its failed job for the current PR head with `gh run rerun <run-id> --failed --repo sor4c/xtrc`.
+- Never merge while any finding or review thread from `github-advanced-security[bot]` is unresolved. The `Trusted Advanced Security Review Findings` check from the trusted `pull_request_target` workflow must pass, and all review conversations must be resolved. Investigate and fix findings; do not dismiss or bypass them. If resolving a thread does not retrigger the trusted check, rerun its failed job for the current PR head with `gh run rerun <run-id> --failed --repo sor4c/xtrc`.
+- For the one-time PR installing that workflow, require conversation resolution, fix and resolve all bot findings, independently run the trusted checker against the PR head, and make the resulting check required on `main` immediately after merge.
 - After merging, verify all required workflows on the exact merge commit SHA before closing the issue. If a check fails or cannot be verified, keep or reopen the issue.
 
 ### 7. Version & Delivery Policy

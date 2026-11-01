@@ -16,6 +16,7 @@ Use this workflow when the user asks to deliver an issue, not when they ask only
 - Do not invent requirements, mark unchecked acceptance criteria complete without evidence, or silently change the issue's scope.
 - Ask the user when requirements are ambiguous, a material design choice is unresolved, or a required action is not authorized. Stop rather than claim completion when GitHub permissions, CI status, the independent reviewer, or another required capability is unavailable.
 - A finding from `github-advanced-security[bot]` is a hard merge blocker until it has been fixed and its review conversation resolved. Inspect the bot's review threads and the required `Trusted Advanced Security Review Findings` check; never dismiss, ignore, or bypass a finding to unblock a merge.
+- For the one-time bootstrap PR that first adds `.github/workflows/security-review-gate.yml`, GitHub cannot run `pull_request_target` from a workflow that is not yet on the base branch. Do not merge until required-conversation-resolution protection is active, all GHAS findings are fixed and their threads resolved, and the trusted checker has been independently run against the current PR head. Immediately after merge, require the new trusted workflow check on `main`; ordinary PRs must not merge if that required check is absent or not passing.
 - Do not include auto-closing PR phrases (`Closes`, `Fixes`, or `Resolves`) for the issue. GitHub may close it at merge time before the merge-commit workflows finish. Use `Relates to #N`; close the issue explicitly only after post-merge verification succeeds.
 
 ## Workflow
@@ -55,7 +56,7 @@ Use this workflow when the user asks to deliver an issue, not when they ask only
    - clean-context review outcome;
    - version/SBOM/docs impact assessment;
    - acceptance criteria only when supported by evidence.
-2. Wait for every required PR check to finish successfully and inspect review comments and unresolved threads, especially findings from `github-advanced-security[bot]`. Do not merge while any such finding is unresolved, or while any required check is pending, failed, or unknown. Resolve findings only after addressing them. If thread resolution does not retrigger the trusted check, rerun its failed job with `gh run rerun <run-id> --failed --repo sor4c/xtrc` and verify success for the current PR head.
+2. Wait for every required PR check to finish successfully and inspect review comments and unresolved threads, especially findings from `github-advanced-security[bot]`. Do not merge while any such finding is unresolved, or while any required check is pending, failed, or unknown. Resolve findings only after addressing them. If thread resolution does not retrigger the trusted check, rerun its failed job with `gh run rerun <run-id> --failed --repo sor4c/xtrc` and verify success for the current PR head. Apply only the one-time trusted-workflow bootstrap procedure above when the PR itself installs that workflow.
 3. Merge only when the user asked for end-to-end delivery and all requirements, independent review, PR checks, and repository merge rules are satisfied. If merge authorization or a required gate is unclear, stop and ask; never bypass a required check.
 
 ### 5. Verify the merge and close the issue

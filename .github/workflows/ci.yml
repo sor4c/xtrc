@@ -17,24 +17,6 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  security-review-findings:
-    name: Advanced Security Review Findings
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check for unresolved Advanced Security findings
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: bash scripts/check-unresolved-security-findings.sh
-
   verify:
     name: Quality Gates & Traceability Verification
     runs-on: ubuntu-latest
