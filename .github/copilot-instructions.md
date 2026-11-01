@@ -49,7 +49,7 @@ When assisting developers in this repository, GitHub Copilot MUST respect and en
 
 ### GitHub Advanced Security Findings
 - Never merge while a finding or review thread from `github-advanced-security[bot]` is unresolved. Investigate and fix the finding, then resolve the conversation; do not dismiss or bypass it to unblock merging.
-- Require the `Trusted Advanced Security Review Findings` check from the trusted `pull_request_target` workflow and GitHub's required-conversation-resolution branch protection. If either gate is absent, failing, or unverifiable, stop without merging. Do not use PR review-comment-triggered workflows for this gate because they can execute PR-controlled workflow code. After fixing and resolving a finding without a new push, dispatch the trusted workflow for the current PR number and head SHA: `gh workflow run security-review-gate.yml --repo sor4c/xtrc --ref main -f pr_number=<number> -f head_sha=<head-sha>`.
+- Require the `Trusted Advanced Security Review Findings` check from the trusted `pull_request_target` workflow and GitHub's required-conversation-resolution branch protection. If either gate is absent, failing, or unverifiable, stop without merging. Do not use PR review-comment-triggered workflows for this gate because they can execute PR-controlled workflow code. After fixing and resolving a finding without a new push, post an issue comment on the PR containing `/security-check <current-head-sha>` to trigger a trusted recheck from the default branch.
 - For the one-time PR that installs the trusted workflow, require conversation resolution, fix and resolve every bot finding, independently run the trusted checker on the current PR head, and make the new check required on `main` immediately after merge.
 
 ---

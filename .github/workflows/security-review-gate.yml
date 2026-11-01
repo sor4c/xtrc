@@ -4,16 +4,8 @@ name: Security Review Gate
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: Pull request number to check
-        required: true
-        type: number
-      head_sha:
-        description: Current pull request head SHA
-        required: true
-        type: string
+  issue_comment:
+    types: [created]
 permissions:
   contents: read
   pull-requests: read
@@ -24,7 +16,13 @@ jobs:
     name: Publish trusted Advanced Security status
     if: >-
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      (github.event_name == 'issue_comment' &&
+       github.ref == 'refs/heads/main' &&
+       github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/security-check ') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-latest
     concurrency:
       group: trusted-ghas-${{ github.event.pull_request.number || github.run_id }}
@@ -41,24 +39,38 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
-          PR_EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          PR_EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [[ ! "${PR_EVENT_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "GitHub provided an invalid pull request head SHA." >&2
-            exit 1
+          requested_sha="${PR_EVENT_HEAD_SHA}"
+          if [[ "${EVENT_NAME}" == "issue_comment" ]]; then
+            if [[ "${COMMENT_BODY}" =~ ^/security-check[[:space:]]+([0-9a-f]{40})$ ]]; then
+              requested_sha="${BASH_REMATCH[1]}"
+            else
+              requested_sha=""
+            fi
           fi
-          echo "head_sha=${PR_EVENT_HEAD_SHA}" >>"${GITHUB_OUTPUT}"
+          if [[ "${requested_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "head_sha=${requested_sha}" >>"${GITHUB_OUTPUT}"
+          fi
           if [[ ! "${PR_NUMBER}" =~ ^[0-9]+$ ]]; then
             echo "A numeric PR_NUMBER is required." >&2
             exit 2
           fi
           head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          if [[ "${head_sha}" != "${PR_EVENT_HEAD_SHA}" ]]; then
-            if [[ "${head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "head_sha=${head_sha}" >>"${GITHUB_OUTPUT}"
-            fi
+          if [[ ! "${head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GitHub returned an invalid pull request head SHA." >&2
+            exit 1
+          fi
+          echo "head_sha=${head_sha}" >>"${GITHUB_OUTPUT}"
+          if [[ "${EVENT_NAME}" == "issue_comment" && ! "${requested_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "A /security-check comment must include the current 40-character PR head SHA." >&2
+            exit 1
+          fi
+          if [[ "${head_sha}" != "${requested_sha}" ]]; then
             echo "The pull request head changed or could not be verified; refusing to pass." >&2
             exit 1
           fi
@@ -80,7 +92,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: bash scripts/check-unresolved-security-findings.sh
 
       - name: Publish trusted status result on pull request head
