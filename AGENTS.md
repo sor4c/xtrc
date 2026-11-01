@@ -46,6 +46,11 @@ All autonomous agents MUST adhere strictly to the **Three Core Development Rules
 - If the post-merge workflow has not started, is still running, or its result cannot be verified, leave the issue open and report verification as pending. Do not equate green PR checks with successful post-merge verification.
 - For requests to implement or deliver a GitHub issue end to end, use the [issue-delivery workflow](.github/skills/issue-delivery/SKILL.md). It requires a fresh-context review with the `issue-reviewer` agent and covers version/SBOM/docs impact, PR and merge gates, exact-SHA post-merge verification, issue closure, and returning the checkout to `main`.
 
+### GitHub Advanced Security Findings (Mandatory)
+- Never merge a PR while any finding or review thread from `github-advanced-security[bot]` is unresolved. Fix the issue and resolve its conversation; never dismiss or bypass a finding just to make a PR mergeable.
+- The `Advanced Security Review Findings` PR check and GitHub's required-conversation-resolution branch protection are mandatory merge gates. If either is missing, failing, skipped unexpectedly, or unverifiable, stop and do not merge.
+- Treat bot findings as security reports requiring investigation even when CI is green. Confirm the fix in code and tests, and record the resolution in the PR.
+
 ---
 
 ## 3. Mandatory Quality Gates & Verification

@@ -1,7 +1,7 @@
 ---
 name: issue-reviewer
 description: "Independent read-only reviewer for an xtrc GitHub issue PR. Use from a fresh context before merge to find correctness bugs, regressions, missing acceptance criteria, and omitted docs/version/SBOM surfaces."
-tools: [read, search, execute]
+tools: [read, search]
 user-invocable: false
 ---
 

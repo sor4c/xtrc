@@ -50,8 +50,8 @@ schema_version: "1.0.0"
 - **Parent**: US-CICD-01
 - **Type**: Functional Requirement
 - **Intent & Value**: Enforce repository quality gates automatically on every remote commit across `main` and feature branches.
-- **Observable Contract & Behavior**: GitHub Actions workflow `.github/workflows/ci.yml` triggers on pushes to any branch, version tags, and pull requests. It runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, `cargo run -- check --strict`, and native release build/smoke checks for all declared targets.
-- **Acceptance Criteria**: Workflow executes automatically on all branch pushes, version tags, and pull requests and fails if any quality gate or supported native target check returns a non-zero exit code.
+- **Observable Contract & Behavior**: GitHub Actions workflow `.github/workflows/ci.yml` triggers on pushes to any branch, version tags, and pull requests. It runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets --all-features`, `cargo run -- check --strict`, native release build/smoke checks for all declared targets, and a pull-request gate that fails while any `github-advanced-security[bot]` review thread is unresolved. The `main` branch requires this security check and resolved review conversations before merge.
+- **Acceptance Criteria**: Workflow executes automatically on all branch pushes, version tags, and pull requests and fails if any quality gate, unresolved Advanced Security finding, or supported native target check fails. Protected `main` requires all declared checks and conversation resolution.
 
 ### REQ-CD-MAIN: Automated Head-of-Main Delivery Workflow
 - **ID**: REQ-CD-MAIN
