@@ -24,7 +24,7 @@ jobs:
     name: Publish trusted Advanced Security status
     if: >-
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
-      github.event_name == 'workflow_dispatch'
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     concurrency:
       group: trusted-ghas-${{ github.event.pull_request.number || github.run_id }}
