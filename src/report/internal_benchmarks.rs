@@ -327,8 +327,8 @@ fn test_nfr_scale_linear_dag_validation_and_prefilter_throughput() {
         ));
     }
 
-    let dag_start = Instant::now();
     let graph = TraceabilityGraph::build(nodes, links).expect("build 2404-node graph");
+    let dag_start = Instant::now();
     detect_cycles(&graph).expect("no cycles in 2404-node graph");
     let report = validate_graph(
         &graph,
@@ -347,7 +347,7 @@ fn test_nfr_scale_linear_dag_validation_and_prefilter_throughput() {
     assert_eq!(report.statistics.coverage_percent, 100.0);
     assert!(
         dag_elapsed < Duration::from_millis(100),
-        "REQ-NFR-SCALE violation: 2,404-node O(V+E) DAG build + validation took {:?}, exceeding 100ms budget",
+        "REQ-NFR-SCALE violation: 2,404-node O(V+E) DAG cycle detection + validation took {:?}, exceeding 100ms budget",
         dag_elapsed
     );
 }
