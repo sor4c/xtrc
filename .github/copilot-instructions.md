@@ -45,6 +45,7 @@ When assisting developers in this repository, GitHub Copilot MUST respect and en
 - Do not use auto-closing PR phrases (`Closes #N`, `Fixes #N`, or `Resolves #N`) while post-merge checks are pending, because GitHub may close the issue immediately upon merge. Use `Relates to #N` and close the issue explicitly only after the post-merge checks pass.
 - If a required post-merge workflow fails, keep or reopen the issue, investigate the failure, and submit the fix through a follow-up branch and PR. Verify the resulting merge commit's required workflows before closing the issue.
 - If the workflow is pending, missing, or otherwise unverifiable, leave the issue open and describe the task as awaiting post-merge verification; do not report completion based only on PR checks.
+- When asked to implement or deliver a GitHub issue end to end, follow the [issue-delivery skill](skills/issue-delivery/SKILL.md), invoke the `issue-reviewer` custom agent for a fresh-context read-only review, and use the `/implement-issue` prompt for the issue number when convenient.
 
 ---
 
