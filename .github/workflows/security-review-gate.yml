@@ -25,8 +25,8 @@ jobs:
         github.event.comment.author_association == 'COLLABORATOR'))
     runs-on: ubuntu-latest
     concurrency:
-      group: trusted-ghas-${{ github.event.pull_request.number || github.run_id }}
-      cancel-in-progress: true
+      group: trusted-ghas-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
+      cancel-in-progress: false
     steps:
       - name: Check out trusted base revision
         uses: actions/checkout@v4
