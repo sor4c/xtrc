@@ -18,12 +18,16 @@ env:
 
 jobs:
   security-review-findings:
-    name: Advanced Security Review Findings
+    name: ${{ github.event_name == 'pull_request' && 'Advanced Security Review Findings' || 'Security Review Gate (PR only)' }}
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Check for unresolved Advanced Security findings
         env:
           GH_TOKEN: ${{ github.token }}
